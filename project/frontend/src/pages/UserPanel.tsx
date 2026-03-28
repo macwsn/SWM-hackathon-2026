@@ -309,7 +309,7 @@ export default function UserPanel() {
               : 'bg-brutal-red text-white'
             }`}
         >
-          {callState === 'in-call' ? '📞 ROZŁĄCZ' : callState === 'calling' ? '📞 DZWONI…' : callState === 'incoming' ? '📞 ODBIERZ' : '🆘 POMOC'}
+          {callState === 'in-call' ? '📞 HANG UP' : callState === 'calling' ? '📞 CALLING…' : callState === 'incoming' ? '📞 ANSWER' : '🆘 HELP'}
         </button>
       </div>
 
