@@ -36,13 +36,19 @@ const PerformanceCharts: React.FC<PerformanceChartsProps> = ({ metrics }) => {
       <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={metrics} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#ccc" />
-            <XAxis dataKey="frame_count" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis dataKey="frame_count" tick={{ fontSize: 10, fill: '#888' }} interval="preserveStartEnd" stroke="#555" />
+            <YAxis tick={{ fontSize: 10, fill: '#888' }} stroke="#555" />
             <Tooltip
-              contentStyle={{ border: '2px solid black', fontFamily: 'monospace', fontSize: 11 }}
+              contentStyle={{
+                border: '2px solid #FFE500',
+                background: '#1a1a2e',
+                fontFamily: 'monospace',
+                fontSize: 11,
+                color: '#fff',
+              }}
             />
-            <Legend wrapperStyle={{ fontSize: 10 }} />
+            <Legend wrapperStyle={{ fontSize: 10, color: '#aaa' }} />
             <Line
               type="monotone"
               dataKey="depth_ms"

@@ -13,14 +13,14 @@ L.Icon.Default.mergeOptions({
 
 const userIcon = L.divIcon({
   html: `<div style="
-    width:20px;height:20px;
-    background:#FF3333;
+    width:18px;height:18px;
+    background:#FFE500;
     border:3px solid #000;
     border-radius:50%;
-    box-shadow: 3px 3px 0 #000;
+    box-shadow: 0 0 10px #FFE50080, 3px 3px 0 #000;
   "></div>`,
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
   className: '',
 })
 
@@ -51,11 +51,11 @@ const MapView: React.FC<MapViewProps> = ({ location, trail }) => {
       center={center}
       zoom={17}
       className="w-full h-full"
-      zoomControl={true}
+      zoomControl={false}
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
       />
       {location && (
         <>
@@ -66,7 +66,7 @@ const MapView: React.FC<MapViewProps> = ({ location, trail }) => {
       {trailPositions.length > 1 && (
         <Polyline
           positions={trailPositions}
-          pathOptions={{ color: '#FF3333', weight: 3, opacity: 0.7 }}
+          pathOptions={{ color: '#FFE500', weight: 3, opacity: 0.7 }}
         />
       )}
     </MapContainer>

@@ -12,8 +12,8 @@ const TYPE_STYLES: Record<AlertMessage['type'], string> = {
 }
 
 const TYPE_LABEL: Record<AlertMessage['type'], string> = {
-  alert: 'PRZESZKODA',
-  describe_response: 'OPIS',
+  alert: 'OBSTACLE',
+  describe_response: 'DESCRIPTION',
   system: 'SYSTEM',
 }
 
@@ -28,7 +28,7 @@ const AlertChat: React.FC<AlertChatProps> = ({ messages }) => {
     <div className="flex flex-col h-full overflow-y-auto gap-2 p-2">
       {messages.length === 0 && (
         <div className="text-gray-400 text-xs font-bold uppercase text-center mt-4">
-          Brak alertów
+          No alerts
         </div>
       )}
       {messages.map((msg) => (
@@ -42,7 +42,7 @@ const AlertChat: React.FC<AlertChatProps> = ({ messages }) => {
               <span className="text-xs font-bold">{msg.distance.toFixed(1)} m</span>
             )}
             <span className="text-xs opacity-70">
-              {new Date(msg.timestamp * 1000).toLocaleTimeString('pl-PL')}
+              {new Date(msg.timestamp * 1000).toLocaleTimeString('en-GB')}
             </span>
           </div>
           <p className="text-sm font-bold leading-snug">{msg.text}</p>

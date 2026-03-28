@@ -24,7 +24,7 @@ interface VideoStreamMockProps {
 const VideoStreamMock = React.forwardRef<HTMLVideoElement, VideoStreamMockProps>(({
   src,
   className = '',
-  label = 'KAMERA (MOCK)',
+  label = 'CAMERA (MOCK)',
 }, ref) => {
   return (
     <div className={`relative w-full h-full bg-black overflow-hidden ${className}`}>
@@ -42,7 +42,7 @@ const VideoStreamMock = React.forwardRef<HTMLVideoElement, VideoStreamMockProps>
       ) : (
         <div className="w-full h-full flex items-center justify-center">
           <span className="text-brutal-yellow text-xs font-bold uppercase animate-pulse">
-            Oczekiwanie na stream…
+            Waiting for stream…
           </span>
         </div>
       )}
@@ -52,7 +52,7 @@ const VideoStreamMock = React.forwardRef<HTMLVideoElement, VideoStreamMockProps>
       </div>
       <div className="absolute top-2 right-2 flex items-center gap-1">
         <div className={`w-2 h-2 rounded-full ${src ? 'bg-brutal-red animate-pulse' : 'bg-gray-500'}`} />
-        <span className="text-white text-xs font-bold">{src ? 'LIVE' : 'BRAK'}</span>
+        <span className="text-white text-xs font-bold">{src ? 'LIVE' : 'N/A'}</span>
       </div>
     </div>
   )
