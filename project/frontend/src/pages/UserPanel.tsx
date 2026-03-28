@@ -47,6 +47,14 @@ export default function UserPanel() {
       }
       void playObstaclePing(payload)
 
+      // Haptic vibration feedback for mobile — stronger for closer obstacles
+      if (navigator.vibrate) {
+        const pattern = payload.severity === 'CRITICAL'
+          ? [100, 50, 100, 50, 200]  // urgent triple buzz
+          : [80, 60, 80]              // warning double buzz
+        navigator.vibrate(pattern)
+      }
+
       if (overlayTimer.current) clearTimeout(overlayTimer.current)
       const dirLabel = payload.direction === 'left' ? 'LEFT' : payload.direction === 'right' ? 'RIGHT' : 'AHEAD'
       const sevLabel = payload.severity === 'CRITICAL' ? 'URGENT' : 'WARNING'

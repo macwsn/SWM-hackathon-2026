@@ -4,7 +4,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import DEPTH_INFERENCE_INTERVAL, CORS_ORIGINS
@@ -60,6 +60,20 @@ app.include_router(stats_ws.router)
 app.include_router(processor_ws.router)
 app.include_router(webrtc.router)
 app.include_router(multi_ws.router)
+
+
+@app.post("/api/log")
+async def frontend_log(request: Request):
+    """Receive log messages from frontend (for debugging on mobile without devtools)."""
+    body = await request.json()
+    level = body.get("level", "info").upper()
+    msg = body.get("message", "")
+    source = body.get("source", "frontend")
+    logger.log(
+        getattr(logging, level, logging.INFO),
+        f"[{source}] {msg}",
+    )
+    return {"ok": True}
 
 
 @app.get("/health")

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(where mkcert:*)",
+      "Bash(where choco:*)",
+      "Bash(where scoop:*)"
+    ]
+  }
+}

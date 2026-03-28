@@ -1,10 +1,13 @@
-import { BrowserRouter, Route, Routes, Link, useParams } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, Link, useParams, useNavigate } from 'react-router-dom'
 import UserPanel from './pages/UserPanel'
 import CaregiverPanel from './pages/CaregiverPanel'
 import StatsPanel from './pages/StatsPanel'
 import MultiAssistantPanel from './pages/MultiAssistantPanel'
 import MultiUserPanel from './pages/MultiUserPanel'
+import { useState } from 'react'
 import { FishjamProvider } from '@fishjam-cloud/react-client'
+import { useBiometricAuth } from './hooks/useBiometricAuth'
+import FingerprintModal from './components/FingerprintModal'
 
 /* ──────────────────────────────────────────
    Decorative floating shape
@@ -64,6 +67,10 @@ function Ticker() {
    Home page
    ────────────────────────────────────────── */
 function Home() {
+  const navigate = useNavigate()
+  const { isMobile } = useBiometricAuth()
+  const [showFingerprint, setShowFingerprint] = useState(false)
+
   return (
     <div className="min-h-screen bg-brutal-yellow bg-dots relative overflow-hidden flex flex-col">
 
@@ -101,6 +108,39 @@ function Home() {
             <span className="text-brutal-yellow font-black text-sm tracking-[0.3em]">SWM HACKATHON 2026</span>
           </div>
         </div>
+
+        {/* Biometric quick login — mobile only */}
+        {isMobile && (
+          <button
+            onClick={() => setShowFingerprint(true)}
+            className="btn-brutal bg-brutal-green text-black max-w-sm w-full py-5 flex items-center justify-center gap-4 group shadow-brutal-lg"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className="group-hover:scale-110 transition-transform flex-shrink-0">
+              <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
+              <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+              <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" />
+              <path d="M2 12a10 10 0 0 1 18-6" />
+              <path d="M2 16h.01" />
+              <path d="M21.8 16c.2-2 .131-5.354 0-6" />
+              <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+              <path d="M8.65 22c.21-.66.45-1.32.57-2" />
+              <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+            </svg>
+            <div className="text-left">
+              <span className="text-lg font-black uppercase block">QUICK LOGIN</span>
+              <span className="text-xs font-bold opacity-70">Use fingerprint to enter as User</span>
+            </div>
+          </button>
+        )}
+
+        {/* Fingerprint modal */}
+        <FingerprintModal
+          open={showFingerprint}
+          onClose={() => setShowFingerprint(false)}
+          onSuccess={() => { setShowFingerprint(false); navigate('/user') }}
+        />
 
         {/* Navigation card */}
         <div className="card-brutal p-6 max-w-sm w-full bg-[#1a1a2e] relative corner-brackets">
