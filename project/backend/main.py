@@ -78,11 +78,74 @@ async def frontend_log(request: Request):
 
 @app.get("/health")
 async def health():
+    """
+    Comprehensive health check endpoint for Docker healthcheck.
+    Verifies that all critical services are ready before accepting traffic.
+    """
+    # Check depth model status
+    depth_ready = depth_model_service.is_loaded
+
+    # Check WebSocket manager is initialized
+    ws_manager_ready = manager is not None
+
+    # Overall status: only healthy if all critical components are ready
+    all_ready = depth_ready and ws_manager_ready
+
     return {
-        "status": "ok",
-        "depth_model_loaded": depth_model_service.is_loaded,
+        "status": "healthy" if all_ready else "starting",
+        "ready": all_ready,
+        "components": {
+            "depth_model": "ready" if depth_ready else "loading",
+            "websocket_manager": "ready" if ws_manager_ready else "initializing",
+        },
         "connections": {
             ch: len(ws_set)
             for ch, ws_set in manager.connections.items()
+        } if ws_manager_ready else {},
+    }
+
+
+@app.get("/health/websocket")
+async def websocket_health():
+    """
+    WebSocket-specific health check.
+    Ensures WebSocket infrastructure is ready to accept connections.
+    """
+    ws_manager_ready = manager is not None
+    depth_ready = depth_model_service.is_loaded
+
+    # WebSocket is considered ready when manager is initialized and depth model is loaded
+    # (depth model is needed for obstacle detection during streaming)
+    websocket_ready = ws_manager_ready and depth_ready
+
+    if not websocket_ready:
+        return {
+            "status": "not_ready",
+            "ready": False,
+            "message": "WebSocket service is still initializing",
+            "components": {
+                "manager": "ready" if ws_manager_ready else "initializing",
+                "depth_model": "ready" if depth_ready else "loading",
+            }
+        }, 503
+
+    return {
+        "status": "ready",
+        "ready": True,
+        "message": "WebSocket service is ready to accept connections",
+        "active_connections": {
+            channel: len(connections)
+            for channel, connections in manager.connections.items()
         },
+    }
+
+
+@app.get("/caregiver/status")
+async def caregiver_status():
+    """Check if any caregiver is currently available."""
+    caregiver_count = len(manager.connections.get("caregiver", set()))
+    return {
+        "available": caregiver_count > 0,
+        "count": caregiver_count,
+        "fallback_mode": "gemini_live" if caregiver_count == 0 else "human_caregiver"
     }

@@ -24,15 +24,10 @@ import random
 
 import httpx
 
-from config import GEMINI_API_KEY, USE_MOCK_GEMINI
+from config import GEMINI_API_KEY, GEMINI_MODEL, USE_MOCK_GEMINI
 from mocks.gemini_mock import gemini_mock, SIMPLE_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
-
-_GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta"
-    "/models/gemini-2.5-flash-lite:generateContent"
-)
 
 
 class GeminiService:
@@ -93,6 +88,13 @@ class GeminiService:
             return "Brak opisu."
 
     async def _call(self, image_bytes: bytes, prompt: str) -> str:
+        """Make API call to Gemini with image and text prompt."""
+        # Build API URL with model from config
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta"
+            f"/models/{GEMINI_MODEL}:generateContent"
+        )
+
         payload = {
             "contents": [{
                 "parts": [
@@ -110,7 +112,7 @@ class GeminiService:
             # Retry transient upstream overloads.
             for attempt in range(2):
                 resp = await client.post(
-                    f"{_GEMINI_URL}?key={GEMINI_API_KEY}", json=payload
+                    f"{url}?key={GEMINI_API_KEY}", json=payload
                 )
                 if resp.status_code != 503:
                     break

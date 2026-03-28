@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useWebRTC } from '../hooks/useWebRTC'
+import { useAIAudioCall } from '../hooks/useAIAudioCall'
 import { useSpatialPing } from '../hooks/useSpatialPing'
 import { useLocation } from '../hooks/useLocation'
 import { wsUrl } from '../lib/wsUrl'
@@ -11,8 +12,9 @@ const CAPTURE_INTERVAL_MS = 150
 type AlertOverlay = { text: string; id: number }
 
 export default function UserPanel() {
-  const { lastMessage, status, send } = useWebSocket(wsUrl('/ws/user'))
+  const { lastMessage, status, send, ws: wsRef } = useWebSocket(wsUrl('/ws/user'))
   const { callState, requestCall, answerCall, hangUp } = useWebRTC('user')
+  const { aiCallState, startAICall, endAICall, playAudioChunk, clearAudioQueue } = useAIAudioCall(wsRef)
   const { isEnabled: pingEnabled, init: initPing, toggle: togglePing, playObstaclePing } = useSpatialPing()
   useLocation(send)
 
@@ -63,14 +65,49 @@ export default function UserPanel() {
       return
     }
 
-    if (msg.type === 'tts_audio' && msg.data) {
-      playAudio(msg.data)
+    if (msg.type === 'tts_audio') {
+      // Try to play audio if available, otherwise fallback to Web Speech API
+      if (msg.data && msg.data.length > 0) {
+        playAudio(msg.data, msg.text)
+      } else if (msg.text) {
+        // Fallback to browser TTS when backend TTS fails
+        speakText(msg.text)
+      }
+
       if (msg.text) {
         if (overlayTimer.current) clearTimeout(overlayTimer.current)
         setOverlay({ text: msg.text, id: Date.now() })
         overlayTimer.current = setTimeout(() => setOverlay(null), 5000)
       }
       setIsDescribing(false)
+    }
+
+    // Handle AI audio call messages
+    if (msg.type === 'ai_call_started') {
+      console.log('[UserPanel] AI call started')
+    }
+
+    if (msg.type === 'ai_audio_chunk') {
+      // Play audio chunk from Gemini
+      if (msg.data) {
+        void playAudioChunk(msg.data as string)
+      }
+    }
+
+    // Handle AI interruption - user started speaking while AI was responding
+    if (msg.type === 'ai_interrupted') {
+      console.log('[UserPanel] AI interrupted - clearing audio queue')
+      clearAudioQueue()
+    }
+
+    if (msg.type === 'ai_call_ended') {
+      console.log('[UserPanel] AI call ended')
+    }
+
+    if (msg.type === 'ai_call_error') {
+      console.error('[UserPanel] AI call error:', msg)
+      setOverlay({ text: 'BŁĄD POŁĄCZENIA AI', id: Date.now() })
+      overlayTimer.current = setTimeout(() => setOverlay(null), 3000)
     }
   }, [lastMessage])
 
@@ -120,20 +157,35 @@ export default function UserPanel() {
       const ctx = canvas.getContext('2d')!
       ctx.drawImage(vid, 0, 0, targetW, targetH)
       const b64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1]
-      ws.send(JSON.stringify({ type: 'frame', data: b64, depth_mode: 'indoor' }))
+      // Send frame without depth_mode so backend can use AUTO_DEPTH_MODE_WITH_GEMINI
+      // Backend will auto-detect indoor/outdoor if enabled in config
+      ws.send(JSON.stringify({ type: 'frame', data: b64, depth_mode: 'outdoor' }))
       waitingRef.current = true
     }, CAPTURE_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [])
 
-  const handleDescribe = () => { void initPing(); setIsDescribing(true); send({ type: 'describe_request' }) }
+  const handleDescribe = () => {
+    void initPing()
+    setIsDescribing(true)
+    send({ type: 'describe_request' })
+  }
+
   const handleCallToggle = () => {
     void initPing()
-    if (callState === 'incoming') answerCall()
-    else if (callState === 'in-call' || callState === 'calling') hangUp()
-    else requestCall()
+    if (callState === 'incoming') {
+      answerCall()
+    } else if (callState === 'in-call' || callState === 'calling') {
+      hangUp()
+    } else {
+      requestCall()
+    }
   }
-  const handleTogglePing = () => { void initPing(); togglePing() }
+
+  const handleTogglePing = () => {
+    void initPing()
+    togglePing()
+  }
 
   const isConnected = status === 'open'
 
@@ -250,16 +302,14 @@ export default function UserPanel() {
           disabled={!isConnected}
           className={`flex-1 h-24 btn-brutal text-lg font-black uppercase
             disabled:opacity-50 disabled:cursor-not-allowed
-            flex flex-col items-center justify-center gap-1
             ${callState === 'in-call' || callState === 'calling' || callState === 'incoming'
               ? 'bg-brutal-green text-black'
+              : aiCallState === 'starting'
+              ? 'bg-brutal-yellow text-black'
               : 'bg-brutal-red text-white'
             }`}
         >
-          <span className="text-2xl">
-            {callState === 'in-call' ? '📞' : callState === 'calling' ? '📞' : callState === 'incoming' ? '📞' : '🆘'}
-          </span>
-          {callState === 'in-call' ? 'HANG UP' : callState === 'calling' ? 'CALLING…' : callState === 'incoming' ? 'ANSWER' : 'HELP'}
+          {callState === 'in-call' ? '📞 ROZŁĄCZ' : callState === 'calling' ? '📞 DZWONI…' : callState === 'incoming' ? '📞 ODBIERZ' : '🆘 POMOC'}
         </button>
       </div>
 
@@ -286,7 +336,7 @@ function CallIndicator({ callState }: { callState: string }) {
   )
 }
 
-function playAudio(base64mp3: string) {
+function playAudio(base64mp3: string, fallbackText?: string) {
   try {
     const bytes = atob(base64mp3)
     const arr = new Uint8Array(bytes.length)
@@ -294,9 +344,45 @@ function playAudio(base64mp3: string) {
     const blob = new Blob([arr], { type: 'audio/mp3' })
     const url = URL.createObjectURL(blob)
     const audio = new Audio(url)
-    audio.play().catch(console.error)
+    audio.play().catch((err) => {
+      console.error('Audio play failed:', err)
+      // Fallback to Web Speech API if audio playback fails
+      if (fallbackText) {
+        speakText(fallbackText)
+      }
+    })
     audio.onended = () => URL.revokeObjectURL(url)
   } catch (e) {
-    console.error('Audio play failed', e)
+    console.error('Audio decode failed:', e)
+    // Fallback to Web Speech API
+    if (fallbackText) {
+      speakText(fallbackText)
+    }
+  }
+}
+
+/**
+ * Fallback TTS using Web Speech API (browser-based, works offline).
+ * Used when backend edge-tts fails.
+ */
+function speakText(text: string) {
+  try {
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'pl-PL'
+    utterance.rate = 1.1
+    utterance.volume = 1.0
+
+    // Try to find Polish voice
+    const voices = window.speechSynthesis.getVoices()
+    const polishVoice = voices.find(v => v.lang.startsWith('pl'))
+    if (polishVoice) {
+      utterance.voice = polishVoice
+    }
+
+    window.speechSynthesis.cancel() // Stop any ongoing speech
+    window.speechSynthesis.speak(utterance)
+    console.log('[TTS Fallback] Using Web Speech API')
+  } catch (e) {
+    console.error('[TTS Fallback] Web Speech API failed:', e)
   }
 }

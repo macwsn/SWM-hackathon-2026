@@ -11,7 +11,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy  # Wait for backend to be fully ready
     networks:
       - frontend-network
     restart: unless-stopped
@@ -42,6 +43,8 @@ services:
       - DEPTH_MODEL_DEVICE=cpu
       - DEPTH_INFERENCE_INTERVAL=0.5
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash-lite}
+      - GEMINI_LIVE_MODEL=${GEMINI_LIVE_MODEL:-gemini-3.1-flash-live-preview}
     volumes:
       - ./project/backend/video_input:/app/video_input
       - model-cache:/app/models
@@ -53,10 +56,11 @@ services:
       - backend-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/websocket"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # ═══════════════════════════════════════════════════════════════
   # EDGE LAYER - Reverse Proxy & SSL Termination (FUTURE)
@@ -208,7 +212,7 @@ services:
   #     - GEMINI_API_KEY=${GEMINI_API_KEY}
   #     - REDIS_URL=redis://redis:6379
   #     - CACHE_TTL_SECONDS=3600
-  #     - MODEL_NAME=gemini-1.5-pro
+  #     - MODEL_NAME=gemini-2.5-flash-lite
   #     - REQUEST_TIMEOUT=30
   #   depends_on:
   #     redis:

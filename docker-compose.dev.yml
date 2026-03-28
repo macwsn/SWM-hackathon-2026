@@ -57,7 +57,7 @@ services:
       # Mount only necessary source files (not the whole directory)
       - ./project/backend/main.py:/app/main.py:cached
       - ./project/backend/config.py:/app/config.py:cached
-      - ./project/backend/.env:/app/.env:cached
+      # Note: .env is a Python virtual environment directory, not needed in container
       - ./project/backend/routers:/app/routers:cached
       - ./project/backend/services:/app/services:cached
       - ./project/backend/mocks:/app/mocks:cached
@@ -71,6 +71,12 @@ services:
       - PYTHONUNBUFFERED=1
       - WATCHFILES_FORCE_POLLING=false  # Use native file watching
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/websocket"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 # ═══════════════════════════════════════════════════════════════
 # VOLUMES - Persistent dependency caches
