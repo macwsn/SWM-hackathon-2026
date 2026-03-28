@@ -12,6 +12,7 @@ export default {
         'brutal-xl': '12px 12px 0px 0px #000000',
         'brutal-red': '4px 4px 0px 0px #dc2626',
         'brutal-blue': '4px 4px 0px 0px #1d4ed8',
+        'brutal-inset': 'inset 4px 4px 0px 0px #000000',
       },
       colors: {
         brutal: {
@@ -21,6 +22,8 @@ export default {
           green: '#00CC44',
           pink: '#FF66CC',
           orange: '#FF6600',
+          dark: '#1a1a2e',
+          darker: '#0f0f1a',
         },
       },
       keyframes: {

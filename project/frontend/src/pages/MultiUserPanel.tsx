@@ -13,7 +13,6 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
 
   const [isConnected, setIsConnected] = useState(false)
   const [callState, setCallState] = useState<'idle' | 'calling'>('idle')
-
   const [minDist, setMinDist] = useState<number | null>(null)
 
   // Start rear camera
@@ -25,7 +24,7 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
       .catch(err => console.error('Camera access failed:', err))
   }, [])
 
-  // Processor WebSocket — send frames to /ws/processor/{userId}
+  // Processor WebSocket
   useEffect(() => {
     let ws: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -33,34 +32,22 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
     const connect = () => {
       ws = new WebSocket(wsUrl(`/ws/processor/${userId}`))
       processorWsRef.current = ws
-
       ws.onopen = () => setIsConnected(true)
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data)
-          if (data.type === 'analysis') {
-            setMinDist(data.min_distance)
-          }
-        } finally {
-          waitingRef.current = false
-        }
+          if (data.type === 'analysis') setMinDist(data.min_distance)
+        } finally { waitingRef.current = false }
       }
-      ws.onclose = () => {
-        setIsConnected(false)
-        waitingRef.current = false
-        reconnectTimer = setTimeout(connect, 2000)
-      }
+      ws.onclose = () => { setIsConnected(false); waitingRef.current = false; reconnectTimer = setTimeout(connect, 2000) }
       ws.onerror = () => { waitingRef.current = false }
     }
 
     connect()
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      ws?.close()
-    }
+    return () => { if (reconnectTimer) clearTimeout(reconnectTimer); ws?.close() }
   }, [userId])
 
-  // Signal WebSocket — listen for redirect from multi-assistant
+  // Signal WebSocket
   useEffect(() => {
     let ws: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -76,27 +63,21 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
             navigate(data.to)
           } else if (data.type === 'incoming_call') {
             // Auto-accept: immediately send accept and let backend redirect
-            ws.send(JSON.stringify({ type: 'accept_incoming_call', user_id: userId }))
+            ws!.send(JSON.stringify({ type: 'accept_incoming_call', user_id: userId }))
           }
         } catch {}
       }
 
-      ws.onclose = () => {
-        reconnectTimer = setTimeout(connect, 2000)
-      }
+      ws.onclose = () => { reconnectTimer = setTimeout(connect, 2000) }
     }
 
     connect()
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      ws?.close()
-    }
+    return () => { if (reconnectTimer) clearTimeout(reconnectTimer); ws?.close() }
   }, [userId, navigate])
 
   // Frame capture loop
   useEffect(() => {
     const canvas = document.createElement('canvas')
-
     const interval = setInterval(() => {
       const vid = videoRef.current
       const ws = processorWsRef.current
@@ -108,11 +89,7 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
       const ratio = Math.min(1.0, Math.min(maxDim / vid.videoWidth, maxDim / vid.videoHeight))
       const targetW = Math.round(vid.videoWidth * ratio)
       const targetH = Math.round(vid.videoHeight * ratio)
-
-      if (canvas.width !== targetW || canvas.height !== targetH) {
-        canvas.width = targetW
-        canvas.height = targetH
-      }
+      if (canvas.width !== targetW || canvas.height !== targetH) { canvas.width = targetW; canvas.height = targetH }
 
       const ctx = canvas.getContext('2d')!
       ctx.drawImage(vid, 0, 0, targetW, targetH)
@@ -120,7 +97,6 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
       ws.send(JSON.stringify({ type: 'frame', data: b64, depth_mode: 'indoor' }))
       waitingRef.current = true
     }, CAPTURE_INTERVAL_MS)
-
     return () => clearInterval(interval)
   }, [])
 
@@ -131,18 +107,25 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
     }
   }
 
-
   const distColor = minDist !== null
     ? minDist < 1.0 ? 'bg-brutal-red' : minDist < 2.0 ? 'bg-brutal-yellow' : 'bg-brutal-green'
     : 'bg-gray-800'
 
+  const bgGlow = minDist !== null
+    ? minDist < 1.0 ? 'glow-red' : minDist < 2.0 ? 'glow-yellow' : ''
+    : ''
+
   return (
-    <div className="h-screen bg-black flex flex-col select-none overflow-hidden">
+    <div className={`h-screen bg-brutal-dark bg-grid-light flex flex-col select-none overflow-hidden relative noise-overlay ${bgGlow}`}>
+
       {/* Status bar */}
       <div className={`flex items-center justify-between px-4 py-2 border-b-4 border-black flex-shrink-0 ${isConnected ? 'bg-brutal-green' : 'bg-brutal-red'}`}>
-        <span className="font-black uppercase text-black text-sm">
-          {userId.toUpperCase()} — {isConnected ? 'POŁĄCZONO' : 'BRAK POŁĄCZENIA'}
-        </span>
+        <div className="flex items-center gap-2">
+          <div className={`status-dot ${isConnected ? 'bg-black text-black' : 'bg-white text-white'}`} />
+          <span className="font-black uppercase text-black text-sm">
+            {userId.toUpperCase()} — {isConnected ? 'CONNECTED' : 'NO CONNECTION'}
+          </span>
+        </div>
         {minDist !== null && (
           <span className={`tag-brutal ${distColor} text-black font-black`}>
             {minDist.toFixed(1)}m
@@ -152,39 +135,55 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
 
       {/* Hidden video */}
       <video ref={videoRef} autoPlay muted playsInline
-        style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
-      />
+        style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }} />
 
       {/* Main area */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center relative z-10">
         {isConnected ? (
           <div className="flex flex-col items-center gap-2">
-            <div className="w-16 h-16 bg-brutal-green rounded-full animate-ping opacity-20 absolute" />
-            <div className="w-16 h-16 bg-brutal-green rounded-full flex items-center justify-center relative border-4 border-black box-content">
-              <span className="text-2xl">👁️</span>
+            <div className="relative">
+              <div className="w-24 h-24 bg-brutal-green/20 rounded-full animate-pulse-ring absolute inset-0" />
+              <div className="w-24 h-24 bg-brutal-green/10 rounded-full animate-ping absolute inset-0" style={{ animationDelay: '0.5s' }} />
+              <div className="w-24 h-24 bg-brutal-green rounded-full flex items-center justify-center relative border-4 border-black shadow-brutal">
+                <span className="text-4xl">👁️</span>
+              </div>
             </div>
-            <span className="text-brutal-green font-black uppercase mt-4">Kamera Aktywna</span>
+            <span className="text-brutal-green font-black uppercase mt-6 text-lg tracking-wider">Camera Active</span>
+            {minDist !== null && (
+              <span className={`font-black text-2xl mt-1 ${minDist < 1.0 ? 'text-brutal-red' : minDist < 2.0 ? 'text-brutal-yellow' : 'text-brutal-green'}`}>
+                {minDist.toFixed(1)}m
+              </span>
+            )}
           </div>
         ) : (
-          <span className="text-brutal-red font-black uppercase animate-pulse">Łączenie...</span>
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-20 h-20 border-4 border-brutal-red rounded-full flex items-center justify-center">
+              <span className="text-brutal-red text-4xl animate-blink">!</span>
+            </div>
+            <span className="text-brutal-red font-black uppercase animate-pulse text-lg">Connecting...</span>
+          </div>
         )}
       </div>
 
       {/* Call button */}
-      <div className="flex-shrink-0 p-4">
+      <div className="flex-shrink-0 p-4 relative z-10">
         <button
           onClick={handleCallRequest}
           disabled={!isConnected || callState === 'calling'}
-          className={`w-full h-20 btn-brutal text-lg font-black uppercase
+          className={`w-full h-24 btn-brutal text-lg font-black uppercase
             disabled:opacity-50 disabled:cursor-not-allowed
+            flex flex-col items-center justify-center gap-1
             ${callState === 'calling' ? 'bg-brutal-yellow text-black' : 'bg-brutal-red text-white'}`}
         >
-          {callState === 'calling' ? '📞 DZWONI…' : '🆘 POMOC'}
+          <span className="text-2xl">{callState === 'calling' ? '📞' : '🆘'}</span>
+          {callState === 'calling' ? 'CALLING…' : 'HELP'}
         </button>
       </div>
 
-      <div className="flex-shrink-0 bg-brutal-yellow border-t-4 border-black px-4 py-1 text-center">
-        <a href="/" className="text-black font-bold text-xs uppercase underline">← MENU</a>
+      {/* Footer */}
+      <div className="flex-shrink-0 bg-black border-t-4 border-brutal-green px-4 py-2 flex items-center justify-between">
+        <a href="/" className="text-brutal-green font-bold text-xs uppercase underline">← MENU</a>
+        <span className="text-brutal-green/50 text-xs font-bold">AISIGHT — {userId.toUpperCase()}</span>
       </div>
     </div>
   )
