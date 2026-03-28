@@ -42,6 +42,71 @@ latest_frame = None
 
 active_processor_ws = None
 
+# Track connected multi-users
+connected_multi_users: set[str] = set()
+
+
+@router.websocket("/ws/processor/{user_id}")
+async def processor_websocket_with_id(ws: WebSocket, user_id: str):
+    """Multi-user processor — broadcasts frames tagged with user_id to 'multi' channel."""
+    await ws.accept()
+    loop = asyncio.get_event_loop()
+    connected_multi_users.add(user_id)
+    logger.info(f"[Processor/{user_id}] connected")
+
+    # Notify multi-assistant about connection
+    await manager.broadcast("multi", {"type": "user_connected", "user_id": user_id})
+
+    try:
+        while True:
+            try:
+                data = await ws.receive_json()
+                if data.get("type") != "frame":
+                    continue
+
+                b64_str = data["data"]
+                b64_str += "=" * ((4 - len(b64_str) % 4) % 4)
+
+                # Broadcast raw frame with user_id to multi-assistant
+                await manager.broadcast("multi", {
+                    "type": "frame",
+                    "user_id": user_id,
+                    "data": b64_str,
+                })
+
+                # Decode for depth inference
+                raw = base64.b64decode(b64_str)
+                arr = np.frombuffer(raw, dtype=np.uint8)
+                frame_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if frame_bgr is None:
+                    continue
+                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                is_indoor = data.get("depth_mode", "outdoor") == "indoor"
+
+                depth_map, inference_ms = await loop.run_in_executor(
+                    None,
+                    lambda f=frame_rgb, i=is_indoor: depth_model_service.predict_depth(f, i),
+                )
+
+                obstacle, min_dist, direction, severity = obstacle_detector.detect(depth_map, is_indoor)
+                # No alerts for multi-users (no pinging)
+
+                await ws.send_json({
+                    "type": "analysis",
+                    "min_distance": round(min_dist, 2),
+                    "inference_ms": round(inference_ms, 1),
+                    "is_indoor": is_indoor,
+                })
+            except WebSocketDisconnect:
+                raise
+            except Exception as e:
+                logger.error(f"[Processor/{user_id}] error: {e}")
+    except WebSocketDisconnect:
+        connected_multi_users.discard(user_id)
+        await manager.broadcast("multi", {"type": "user_disconnected", "user_id": user_id})
+        logger.info(f"[Processor/{user_id}] disconnected")
+
+
 @router.websocket("/ws/processor")
 async def processor_websocket(ws: WebSocket):
     global active_processor_ws
