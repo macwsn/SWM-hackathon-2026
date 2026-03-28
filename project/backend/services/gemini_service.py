@@ -29,8 +29,8 @@ from mocks.gemini_mock import gemini_mock, SIMPLE_DESCRIPTIONS
 logger = logging.getLogger(__name__)
 
 _GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta"
-    "/models/gemini-1.5-pro:generateContent"
+    "https://aiplatform.googleapis.com/v1"
+    "/publishers/google/models/gemini-2.5-flash-lite:generateContent"
 )
 
 

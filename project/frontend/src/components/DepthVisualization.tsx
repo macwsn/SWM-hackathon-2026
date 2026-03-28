@@ -10,7 +10,7 @@ const DepthVisualization: React.FC<DepthVisualizationProps> = ({ frame }) => {
     return (
       <div className="w-full h-full bg-black flex items-center justify-center">
         <span className="text-brutal-yellow font-bold text-sm uppercase">
-          Oczekiwanie na model…
+          Waiting for model…
         </span>
       </div>
     )
@@ -35,7 +35,7 @@ const DepthVisualization: React.FC<DepthVisualizationProps> = ({ frame }) => {
       <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <span className="tag-brutal bg-brutal-yellow text-black text-xs">
-            {frame.is_indoor ? 'WNĘTRZE' : 'ZEWNĄTRZ'}
+            {frame.is_indoor ? 'INDOOR' : 'OUTDOOR'}
           </span>
           <span className={`font-black text-lg ${distColor}`}>
             {frame.min_distance.toFixed(2)} m
@@ -48,7 +48,7 @@ const DepthVisualization: React.FC<DepthVisualizationProps> = ({ frame }) => {
 
       {/* Colormap legend */}
       <div className="absolute top-2 right-2 flex flex-col items-end gap-0.5">
-        <span className="text-yellow-300 text-xs font-bold">BLISKO</span>
+        <span className="text-yellow-300 text-xs font-bold">NEAR</span>
         <div
           className="w-3 h-16 border border-white"
           style={{
@@ -56,7 +56,7 @@ const DepthVisualization: React.FC<DepthVisualizationProps> = ({ frame }) => {
               'linear-gradient(to bottom, #f0f921, #cc4778, #0d0887)',
           }}
         />
-        <span className="text-purple-400 text-xs font-bold">DALEKO</span>
+        <span className="text-purple-400 text-xs font-bold">FAR</span>
       </div>
     </div>
   )

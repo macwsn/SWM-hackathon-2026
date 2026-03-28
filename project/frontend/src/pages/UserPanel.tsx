@@ -21,23 +21,18 @@ export default function UserPanel() {
   const [depthFrame, setDepthFrame] = useState<DepthFrame | null>(null)
   const overlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Video ref for frame capture
   const videoRef = useRef<HTMLVideoElement>(null)
   const processorWsRef = useRef<WebSocket | null>(null)
   const waitingRef = useRef(false)
 
-  // Start local camera
   useEffect(() => {
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
       .then(stream => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-        }
+        if (videoRef.current) videoRef.current.srcObject = stream
       })
       .catch(err => console.error('Camera access failed:', err))
   }, [])
 
-  // Play TTS audio and show overlay when alert arrives
   useEffect(() => {
     if (!lastMessage) return
     const msg = lastMessage as { type: string; data?: string; text?: string; distance?: number; direction?: 'left' | 'center' | 'right'; severity?: 'INFO' | 'WARNING' | 'CRITICAL' }
@@ -53,8 +48,8 @@ export default function UserPanel() {
       void playObstaclePing(payload)
 
       if (overlayTimer.current) clearTimeout(overlayTimer.current)
-      const dirLabel = payload.direction === 'left' ? 'PO LEWEJ' : payload.direction === 'right' ? 'PO PRAWEJ' : 'NA WPROST'
-      const sevLabel = payload.severity === 'CRITICAL' ? 'PILNE' : 'UWAGA'
+      const dirLabel = payload.direction === 'left' ? 'LEFT' : payload.direction === 'right' ? 'RIGHT' : 'AHEAD'
+      const sevLabel = payload.severity === 'CRITICAL' ? 'URGENT' : 'WARNING'
       setOverlay({ text: `${sevLabel}: ${dirLabel} ${payload.distance.toFixed(1)} m`, id: Date.now() })
       overlayTimer.current = setTimeout(() => setOverlay(null), 2500)
       return
@@ -71,7 +66,6 @@ export default function UserPanel() {
     }
   }, [lastMessage])
 
-  // Processor WebSocket — send frames, receive depth results
   useEffect(() => {
     let ws: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -79,7 +73,6 @@ export default function UserPanel() {
     const connect = () => {
       ws = new WebSocket(wsUrl('/ws/processor'))
       processorWsRef.current = ws
-
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data)
@@ -91,30 +84,18 @@ export default function UserPanel() {
               is_indoor: data.is_indoor,
             })
           }
-        } finally {
-          waitingRef.current = false
-        }
+        } finally { waitingRef.current = false }
       }
-
-      ws.onclose = () => {
-        waitingRef.current = false
-        reconnectTimer = setTimeout(connect, 2000)
-      }
-
+      ws.onclose = () => { waitingRef.current = false; reconnectTimer = setTimeout(connect, 2000) }
       ws.onerror = () => { waitingRef.current = false }
     }
 
     connect()
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      ws?.close()
-    }
+    return () => { if (reconnectTimer) clearTimeout(reconnectTimer); ws?.close() }
   }, [])
 
-  // Frame capture loop — captures from <video>, sends to processor WS
   useEffect(() => {
     const canvas = document.createElement('canvas')
-
     const interval = setInterval(() => {
       const vid = videoRef.current
       const ws = processorWsRef.current
@@ -126,11 +107,7 @@ export default function UserPanel() {
       const ratio = Math.min(1.0, Math.min(maxDim / vid.videoWidth, maxDim / vid.videoHeight))
       const targetW = Math.round(vid.videoWidth * ratio)
       const targetH = Math.round(vid.videoHeight * ratio)
-
-      if (canvas.width !== targetW || canvas.height !== targetH) {
-        canvas.width = targetW
-        canvas.height = targetH
-      }
+      if (canvas.width !== targetW || canvas.height !== targetH) { canvas.width = targetW; canvas.height = targetH }
 
       const ctx = canvas.getContext('2d')!
       ctx.drawImage(vid, 0, 0, targetW, targetH)
@@ -138,92 +115,101 @@ export default function UserPanel() {
       ws.send(JSON.stringify({ type: 'frame', data: b64, depth_mode: 'indoor' }))
       waitingRef.current = true
     }, CAPTURE_INTERVAL_MS)
-
     return () => clearInterval(interval)
   }, [])
 
-  const handleDescribe = () => {
-    void initPing()
-    setIsDescribing(true)
-    send({ type: 'describe_request' })
-  }
-
+  const handleDescribe = () => { void initPing(); setIsDescribing(true); send({ type: 'describe_request' }) }
   const handleCallToggle = () => {
     void initPing()
-    if (callState === 'incoming') {
-      answerCall()
-    } else if (callState === 'in-call' || callState === 'calling') {
-      hangUp()
-    } else {
-      requestCall()
-    }
+    if (callState === 'incoming') answerCall()
+    else if (callState === 'in-call' || callState === 'calling') hangUp()
+    else requestCall()
   }
-
-  const handleTogglePing = () => {
-    void initPing()
-    togglePing()
-  }
+  const handleTogglePing = () => { void initPing(); togglePing() }
 
   const isConnected = status === 'open'
 
   const distColor = depthFrame
-    ? depthFrame.min_distance < 1.0
-      ? 'text-brutal-red'
-      : depthFrame.min_distance < 2.0
-      ? 'text-brutal-yellow'
-      : 'text-brutal-green'
+    ? depthFrame.min_distance < 1.0 ? 'text-brutal-red' : depthFrame.min_distance < 2.0 ? 'text-brutal-yellow' : 'text-brutal-green'
     : 'text-white'
 
+  const bgGlow = depthFrame
+    ? depthFrame.min_distance < 1.0 ? 'glow-red' : depthFrame.min_distance < 2.0 ? 'glow-yellow' : ''
+    : ''
+
   return (
-    <div className="h-screen bg-black flex flex-col select-none overflow-hidden">
+    <div className={`h-screen bg-brutal-dark bg-grid-light flex flex-col select-none overflow-hidden relative noise-overlay ${bgGlow}`}>
+
       {/* Status bar */}
       <div className={`flex items-center justify-between px-4 py-2 border-b-4 border-black flex-shrink-0 ${isConnected ? 'bg-brutal-green' : 'bg-brutal-red'}`}>
-        <span className="font-black uppercase text-black text-sm">
-          {isConnected ? 'POŁĄCZONO' : 'BRAK POŁĄCZENIA'}
-        </span>
+        <div className="flex items-center gap-2">
+          <div className={`status-dot ${isConnected ? 'bg-black text-black' : 'bg-white text-white'}`} />
+          <span className="font-black uppercase text-black text-sm">
+            {isConnected ? 'CONNECTED' : 'NO CONNECTION'}
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleTogglePing}
             className={`tag-brutal ${pingEnabled ? 'bg-brutal-yellow text-black' : 'bg-gray-200 text-black'}`}
           >
-            {pingEnabled ? 'PING ON' : 'PING OFF'}
+            {pingEnabled ? ')) PING ON' : 'PING OFF'}
           </button>
           <CallIndicator callState={callState} />
+          {depthFrame && (
+            <span className={`tag-brutal bg-black ${distColor} font-black`}>
+              {depthFrame.min_distance.toFixed(1)}m
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Hidden Video for frame capture */}
-      <video
-        ref={videoRef}
-        autoPlay
-        muted
-        playsInline
-        style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
-      />
+      {/* Hidden Video */}
+      <video ref={videoRef} autoPlay muted playsInline
+        style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }} />
 
-      {/* Main Area (Empty for blind user) */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+      {/* Main Area */}
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center relative z-10">
         {!isConnected && (
-           <span className="text-brutal-red font-black uppercase animate-pulse">Brak połączenia z systemem</span>
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-20 h-20 border-4 border-brutal-red rounded-full flex items-center justify-center">
+              <span className="text-brutal-red text-4xl animate-blink">!</span>
+            </div>
+            <span className="text-brutal-red font-black uppercase animate-pulse text-lg">No connection to system</span>
+          </div>
         )}
         {isConnected && !depthFrame && (
-           <span className="text-brutal-yellow font-black uppercase animate-pulse">Inicjalizacja systemu wizyjnego…</span>
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-20 h-20 border-4 border-brutal-yellow border-dashed rounded-full flex items-center justify-center animate-spin-slow">
+              <span className="text-brutal-yellow text-2xl animate-none">⟳</span>
+            </div>
+            <span className="text-brutal-yellow font-black uppercase animate-pulse">Initializing vision system…</span>
+          </div>
         )}
         {isConnected && depthFrame && (
-           <div className="flex flex-col items-center gap-2">
-             <div className="w-16 h-16 bg-brutal-green rounded-full animate-ping opacity-20 absolute" />
-             <div className="w-16 h-16 bg-brutal-green rounded-full flex items-center justify-center relative border-4 border-black box-content">
-                <span className="text-2xl">👁️</span>
-             </div>
-             <span className="text-brutal-green font-black uppercase mt-4">System Aktywny</span>
-           </div>
+          <div className="flex flex-col items-center gap-2">
+            <div className="relative">
+              <div className="w-24 h-24 bg-brutal-green/20 rounded-full animate-pulse-ring absolute inset-0" />
+              <div className="w-24 h-24 bg-brutal-green/10 rounded-full animate-ping absolute inset-0" style={{ animationDelay: '0.5s' }} />
+              <div className="w-24 h-24 bg-brutal-green rounded-full flex items-center justify-center relative border-4 border-black shadow-brutal">
+                <span className="text-4xl">👁️</span>
+              </div>
+            </div>
+            <span className="text-brutal-green font-black uppercase mt-6 text-lg tracking-wider">System Active</span>
+            <span className={`font-black text-2xl mt-1 ${distColor}`}>
+              {depthFrame.min_distance.toFixed(1)}m
+            </span>
+          </div>
         )}
       </div>
 
       {/* Alert overlay */}
       {overlay && (
-        <div className="flex-shrink-0 mx-4 my-2 border-4 border-brutal-red bg-brutal-red text-white p-3 shadow-brutal">
-          <p className="font-black text-lg uppercase leading-tight">{overlay.text}</p>
+        <div className="flex-shrink-0 mx-4 my-2 border-4 border-brutal-red bg-brutal-red text-white p-4 shadow-brutal animate-slide-up">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl animate-pulse">⚠️</span>
+            <p className="font-black text-lg uppercase leading-tight flex-1">{overlay.text}</p>
+          </div>
         </div>
       )}
 
@@ -239,33 +225,40 @@ export default function UserPanel() {
       )}
 
       {/* Buttons */}
-      <div className="flex-shrink-0 flex gap-3 p-4">
+      <div className="flex-shrink-0 flex gap-3 p-4 relative z-10">
         <button
           onClick={handleDescribe}
           disabled={!isConnected || isDescribing}
-          className="flex-1 h-20 btn-brutal bg-brutal-yellow text-black text-lg font-black uppercase
-                     disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-x-0 disabled:translate-y-0 disabled:shadow-brutal"
+          className="flex-1 h-24 btn-brutal bg-brutal-yellow text-black text-lg font-black uppercase
+                     disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-x-0 disabled:translate-y-0 disabled:shadow-brutal
+                     flex flex-col items-center justify-center gap-1"
         >
-          {isDescribing ? '⏳ OPISUJĘ…' : '🔍 OPISZ'}
+          <span className="text-2xl">{isDescribing ? '⏳' : '🔍'}</span>
+          {isDescribing ? 'OPISUJĘ…' : 'OPISZ'}
         </button>
 
         <button
           onClick={handleCallToggle}
           disabled={!isConnected}
-          className={`flex-1 h-20 btn-brutal text-lg font-black uppercase
+          className={`flex-1 h-24 btn-brutal text-lg font-black uppercase
             disabled:opacity-50 disabled:cursor-not-allowed
+            flex flex-col items-center justify-center gap-1
             ${callState === 'in-call' || callState === 'calling' || callState === 'incoming'
               ? 'bg-brutal-green text-black'
               : 'bg-brutal-red text-white'
             }`}
         >
-          {callState === 'in-call' ? '📞 ROZŁĄCZ' : callState === 'calling' ? '📞 DZWONI…' : callState === 'incoming' ? '📞 ODBIERZ' : '🆘 POMOC'}
+          <span className="text-2xl">
+            {callState === 'in-call' ? '📞' : callState === 'calling' ? '📞' : callState === 'incoming' ? '📞' : '🆘'}
+          </span>
+          {callState === 'in-call' ? 'ROZŁĄCZ' : callState === 'calling' ? 'DZWONI…' : callState === 'incoming' ? 'ODBIERZ' : 'POMOC'}
         </button>
       </div>
 
       {/* Footer nav */}
-      <div className="flex-shrink-0 bg-brutal-yellow border-t-4 border-black px-4 py-1 text-center">
-        <a href="/" className="text-black font-bold text-xs uppercase underline">← MENU</a>
+      <div className="flex-shrink-0 bg-black border-t-4 border-brutal-green px-4 py-2 flex items-center justify-between">
+        <a href="/" className="text-brutal-green font-bold text-xs uppercase underline">← MENU</a>
+        <span className="text-brutal-green/50 text-xs font-bold">BLIND ASSIST v1.0</span>
       </div>
     </div>
   )
