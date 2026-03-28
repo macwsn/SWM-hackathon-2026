@@ -22,15 +22,23 @@ Message to client:
 
 import asyncio
 import base64
+import io
 import logging
 import time
 
 import cv2
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from PIL import Image
 
+from config import (
+    AUTO_DEPTH_MODE_DEFAULT,
+    AUTO_DEPTH_MODE_INTERVAL_SECONDS,
+    AUTO_DEPTH_MODE_WITH_GEMINI,
+)
 from routers.websocket_manager import manager
 from services.depth_model import depth_model_service
+from services.gemini_service import gemini_service
 from services.obstacle_detector import obstacle_detector
 
 router = APIRouter(tags=["websocket"])
@@ -38,12 +46,56 @@ logger = logging.getLogger(__name__)
 
 # Global variable to hold the latest frame from the phone for Gemini descriptions
 latest_frame = None
+auto_depth_mode = AUTO_DEPTH_MODE_DEFAULT if AUTO_DEPTH_MODE_DEFAULT in ("indoor", "outdoor") else None
 
 
 active_processor_ws = None
 
 # Track connected multi-users
 connected_multi_users: set[str] = set()
+
+
+def get_auto_depth_mode() -> str | None:
+    return auto_depth_mode
+
+
+async def detect_depth_mode_from_frame(frame_rgb: np.ndarray) -> str | None:
+    img = Image.fromarray(frame_rgb)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=80)
+    image_bytes = buf.getvalue()
+
+    detected = await gemini_service.get_indoor_outdoor(image_bytes)
+    return detected if detected in ("indoor", "outdoor") else None
+
+
+async def auto_update_depth_mode_loop() -> None:
+    """Periodically classifies latest frame as indoor/outdoor and updates depth mode."""
+    global auto_depth_mode
+
+    if not AUTO_DEPTH_MODE_WITH_GEMINI:
+        logger.info("[DepthMode] auto Gemini switching disabled")
+        return
+
+    logger.info(
+        "[DepthMode] auto Gemini switching enabled (interval=%.0fs, initial=%s)",
+        AUTO_DEPTH_MODE_INTERVAL_SECONDS,
+        auto_depth_mode or "unknown",
+    )
+
+    while True:
+        try:
+            frame = latest_frame
+            if frame is not None:
+                detected = await detect_depth_mode_from_frame(frame)
+                if detected in ("indoor", "outdoor"):
+                    if detected != auto_depth_mode:
+                        logger.info("[DepthMode] switched %s -> %s", auto_depth_mode or "unknown", detected)
+                    auto_depth_mode = detected
+        except Exception:
+            logger.exception("[DepthMode] auto update failed")
+
+        await asyncio.sleep(max(5.0, AUTO_DEPTH_MODE_INTERVAL_SECONDS))
 
 
 @router.websocket("/ws/processor/{user_id}")
@@ -125,7 +177,6 @@ async def processor_websocket(ws: WebSocket):
                     continue
 
                 t0 = time.perf_counter()
-                is_indoor = data.get("depth_mode", "outdoor") == "indoor"
 
                 # Decode base64 JPEG → RGB numpy
                 b64_str = data["data"]
@@ -140,6 +191,18 @@ async def processor_websocket(ws: WebSocket):
                 # Store latest frame globally for user_ws.py
                 global latest_frame
                 latest_frame = frame_rgb
+
+                if AUTO_DEPTH_MODE_WITH_GEMINI and get_auto_depth_mode() is None:
+                    detected = await detect_depth_mode_from_frame(frame_rgb)
+                    if detected:
+                        global auto_depth_mode
+                        auto_depth_mode = detected
+                        logger.info("[DepthMode] initial detection -> %s", detected)
+
+                selected_mode = get_auto_depth_mode() if AUTO_DEPTH_MODE_WITH_GEMINI else data.get("depth_mode", "outdoor")
+                if selected_mode not in ("indoor", "outdoor"):
+                    selected_mode = data.get("depth_mode", "outdoor")
+                is_indoor = selected_mode == "indoor"
 
                 await manager.broadcast("caregiver", {"type": "frame", "data": b64_str})
                 await manager.broadcast("stats", {"type": "frame", "data": b64_str})
