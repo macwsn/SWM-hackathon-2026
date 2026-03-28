@@ -33,28 +33,28 @@ from routers.websocket_manager import manager
 logger = logging.getLogger(__name__)
 
 # System prompt for navigation assistance
-_NAVIGATION_PROMPT = """Jesteś przyjaznym asystentem pomagającym osobie niewidomej w nawigacji.
+_NAVIGATION_PROMPT = """You are a friendly assistant helping a blind person with navigation.
 
-TWOJA ROLA:
-- Pomagasz osobie niewidomej poruszać się bezpiecznie
-- Otrzymujesz obraz z kamery co ~2 sekundy
-- Otrzymujesz współrzędne GPS lokalizacji użytkownika
-- Opisujesz otoczenie w sposób pomocny i zwięzły
-- Osoba niewidoma może Cię poprosić o pomoc lub konkretne wskazówki w opisaniu otoczenia.
+YOUR ROLE:
+- You help a blind person navigate safely
+- You receive camera images every ~2 seconds
+- You receive GPS coordinates of the user's location
+- You describe the surroundings in a helpful and concise manner
+- The blind person may ask you for help or specific guidance in describing the environment.
 
-STYL KOMUNIKACJI:
-- Mów przyjaźnie i cierpliwie
-- Używaj krótkich, jasnych zdań (maksymalnie 2-3 zdania)
-- Koncentruj się na przeszkodach i istotnych elementach otoczenia
-- Wspominaj o kierunkach (lewo, prawo, prosto)
-- Podawaj szacunkowe odległości gdy to możliwe
+COMMUNICATION STYLE:
+- Speak friendly and patiently
+- Use short, clear sentences (maximum 2-3 sentences)
+- Focus on obstacles and important environmental elements
+- Mention directions (left, right, straight)
+- Provide approximate distances when possible
 
-PRIORYTET:
-1. Bezpieczeństwo - ostrzegaj o przeszkodach
-2. Orientacja - pomagaj zrozumieć otoczenie
-3. Nawigacja - sugeruj bezpieczne kierunki ruchu
+PRIORITY:
+1. Safety - warn about obstacles
+2. Orientation - help understand surroundings
+3. Navigation - suggest safe directions of movement
 
-Odpowiadaj TYLKO PO POLSKU, maksymalnie 2-3 zdania."""
+Respond ONLY IN ENGLISH, maximum 2-3 sentences."""
 
 
 class GeminiLiveService:
@@ -81,6 +81,15 @@ class GeminiLiveService:
         caregiver_count = len(manager.connections.get("caregiver", set()))
         logger.info(f"[GeminiLive] Caregiver availability check: {caregiver_count} connected")
         return caregiver_count > 0
+
+    def is_live_session_active(self) -> bool:
+        """
+        Check if a Gemini Live session is currently active.
+
+        Returns:
+            True if live session is active, False otherwise.
+        """
+        return self._live_ws is not None
 
     async def assist_navigation(
         self,
@@ -117,10 +126,10 @@ class GeminiLiveService:
             lon = location.get("lon", 0.0)
 
             # Build prompt with location context
-            user_prompt = f"Lokalizacja GPS: {lat:.6f}, {lon:.6f}\n\n"
+            user_prompt = f"GPS Location: {lat:.6f}, {lon:.6f}\n\n"
             if context:
-                user_prompt += f"Kontekst: {context}\n\n"
-            user_prompt += "Co widzisz w otoczeniu użytkownika? Opisz przeszkody i sugeruj bezpieczny kierunek ruchu."
+                user_prompt += f"Context: {context}\n\n"
+            user_prompt += "What do you see in the user's surroundings? Describe obstacles and suggest a safe direction of movement."
 
             result = await self._call_gemini(image_bytes, user_prompt)
 
@@ -246,6 +255,11 @@ class GeminiLiveService:
                             }
                         }
                     },
+                    "realtimeInputConfig": {
+                        # Include audio activity and ALL video frames in the turn
+                        # This ensures the model processes video frames even during silence
+                        "turnCoverage": "TURN_INCLUDES_AUDIO_ACTIVITY_AND_ALL_VIDEO"
+                    },
                     "systemInstruction": {
                         "parts": [{
                             "text": _NAVIGATION_PROMPT
@@ -322,11 +336,15 @@ class GeminiLiveService:
             logger.debug(f"[GeminiLive] WebSocket state: {self._live_ws}")
             return
 
-        if self._live_ws.closed:
-            logger.error("[GeminiLive] ❌ Cannot send audio - WebSocket is closed")
-            logger.error(f"[GeminiLive] WebSocket close code: {self._live_ws.close_code}")
-            logger.error(f"[GeminiLive] WebSocket close reason: {self._live_ws.close_reason}")
-            return
+        # Check if WebSocket is closed (safely)
+        try:
+            if hasattr(self._live_ws, 'closed') and self._live_ws.closed:
+                logger.error("[GeminiLive] ❌ Cannot send audio - WebSocket is closed")
+                logger.error(f"[GeminiLive] WebSocket close code: {self._live_ws.close_code}")
+                logger.error(f"[GeminiLive] WebSocket close reason: {self._live_ws.close_reason}")
+                return
+        except Exception as e:
+            logger.debug(f"[GeminiLive] Could not check WebSocket closed status: {e}")
 
         try:
             # 2. REALTIME INPUT PHASE
@@ -349,6 +367,55 @@ class GeminiLiveService:
             logger.error(f"[GeminiLive] Close code: {exc.code}, reason: {exc.reason}")
         except Exception as exc:
             logger.error(f"[GeminiLive] ❌ Failed to send audio chunk: {exc}")
+            logger.error(f"[GeminiLive] Exception type: {type(exc).__name__}")
+            import traceback
+            logger.debug(f"[GeminiLive] Stack trace:\n{traceback.format_exc()}")
+
+    async def send_video_frame(self, image_base64: str):
+        """
+        Send video frame from user's camera to Gemini Live API.
+
+        Args:
+            image_base64: Base64-encoded JPEG image
+        """
+        if USE_MOCK_GEMINI or not GEMINI_API_KEY:
+            # Mock mode - just log
+            logger.debug(f"[GeminiLive] 🎭 MOCK: Received {len(image_base64)} bytes of video")
+            return
+
+        if self._live_ws is None:
+            logger.warning("[GeminiLive] ⚠️ Cannot send video - no active live session")
+            return
+
+        # Check if WebSocket is closed (safely)
+        try:
+            if hasattr(self._live_ws, 'closed') and self._live_ws.closed:
+                logger.error("[GeminiLive] ❌ Cannot send video - WebSocket is closed")
+                return
+        except Exception as e:
+            logger.debug(f"[GeminiLive] Could not check WebSocket closed status: {e}")
+
+        try:
+            # Send video frame via realtimeInput with 'video' field
+            # Per GEMINI_LIVE.md: realtimeInput supports audio, video, and text fields
+            message = {
+                "realtimeInput": {
+                    "video": {
+                        "data": image_base64,
+                        "mimeType": "image/jpeg"
+                    }
+                }
+            }
+
+            logger.info(f"[GeminiLive] 📹 Sending video frame ({len(image_base64)} bytes)...")
+            await self._live_ws.send(json.dumps(message))
+            logger.info(f"[GeminiLive] ✅ Video frame sent successfully")
+
+        except websockets.exceptions.ConnectionClosed as exc:
+            logger.error(f"[GeminiLive] ❌ WebSocket closed while sending video: {exc}")
+            logger.error(f"[GeminiLive] Close code: {exc.code}, reason: {exc.reason}")
+        except Exception as exc:
+            logger.error(f"[GeminiLive] ❌ Failed to send video frame: {exc}")
             logger.error(f"[GeminiLive] Exception type: {type(exc).__name__}")
             import traceback
             logger.debug(f"[GeminiLive] Stack trace:\n{traceback.format_exc()}")
@@ -487,6 +554,14 @@ class GeminiLiveService:
                 elif "usageMetadata" in message:
                     logger.info("[GeminiLive] 📊 Received usage metadata")
                     logger.debug(f"[GeminiLive] Usage metadata: {json.dumps(message.get('usageMetadata'), indent=2)}")
+
+                elif "sessionResumptionUpdate" in message:
+                    # Session resumption update - this is sent by Gemini to manage session state
+                    # This is normal during long sessions and doesn't indicate an error
+                    logger.info("[GeminiLive] 🔄 Received session resumption update")
+                    resumption_data = message.get("sessionResumptionUpdate", {})
+                    logger.debug(f"[GeminiLive] Session resumption data: {json.dumps(resumption_data, indent=2)}")
+                    # No action needed - Gemini is managing the session state
 
                 else:
                     logger.warning(f"[GeminiLive] ⚠️ Received unknown message type")

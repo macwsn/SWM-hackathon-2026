@@ -65,26 +65,57 @@ async def user_websocket(ws: WebSocket):
                 # User wants to start live audio call with AI
                 logger.info("[User] 🎙️ Start AI call request received")
 
-                # Check if caregiver is available - if so, reject AI call
-                if gemini_live_service.is_caregiver_available():
-                    logger.info("[User] ❌ AI call rejected - caregiver is available, use WebRTC instead")
-                    await manager.send_to(ws, {
-                        "type": "ai_call_rejected",
-                        "reason": "Caregiver is available, please use the regular call button"
-                    })
-                else:
+                # 🔧 DEBUG MODE: Force AI connection regardless of caregiver availability
+                logger.warning("[User] 🔧 DEBUG MODE: Forcing AI connection (bypassing caregiver check)")
+
+                try:
                     # Start live session with Gemini
-                    logger.info("[User] ✅ Starting Gemini Live audio session - NO caregiver available")
+                    logger.info("[User] ✅ Starting Gemini Live audio session - FORCED FOR DEBUGGING")
                     await gemini_live_service.start_live_session(ws)
                     await manager.send_to(ws, {
                         "type": "ai_call_started"
                     })
+                    logger.info("[User] ✅ AI call started successfully")
+                except Exception as start_exc:
+                    logger.error(f"[User] ❌ Failed to start AI call: {start_exc}")
+                    logger.error(f"[User] Exception type: {type(start_exc).__name__}")
+                    import traceback
+                    logger.error(f"[User] Stack trace:\n{traceback.format_exc()}")
+                    await manager.send_to(ws, {
+                        "type": "ai_call_error",
+                        "message": str(start_exc)
+                    })
+
+                # ORIGINAL CODE (commented out for debugging):
+                # # Check if caregiver is available - if so, reject AI call
+                # if gemini_live_service.is_caregiver_available():
+                #     logger.info("[User] ❌ AI call rejected - caregiver is available, use WebRTC instead")
+                #     await manager.send_to(ws, {
+                #         "type": "ai_call_rejected",
+                #         "reason": "Caregiver is available, please use the regular call button"
+                #     })
+                # else:
+                #     # Start live session with Gemini
+                #     logger.info("[User] ✅ Starting Gemini Live audio session - NO caregiver available")
+                #     await gemini_live_service.start_live_session(ws)
+                #     await manager.send_to(ws, {
+                #         "type": "ai_call_started"
+                #     })
 
             elif msg_type == "audio_chunk":
                 # Forward audio chunk to Gemini Live session
                 audio_data = data.get("data", "")
                 if audio_data:
                     await gemini_live_service.send_audio_chunk(audio_data)
+
+            elif msg_type == "frame":
+                # Forward video frame to Gemini Live session if AI call is active
+                frame_data = data.get("data", "")
+                is_active = gemini_live_service.is_live_session_active()
+                logger.info(f"[User] 📹 Received frame (size: {len(frame_data) if frame_data else 0} bytes), AI active: {is_active}")
+                if frame_data and is_active:
+                    await gemini_live_service.send_video_frame(frame_data)
+                    logger.info("[User] ✅ Forwarded frame to AI")
 
             elif msg_type == "end_ai_call":
                 # End live session with Gemini
@@ -136,7 +167,7 @@ async def user_websocket(ws: WebSocket):
                         await manager.send_to(ws, {
                             "type": "processing_status",
                             "status": "calling_ai",
-                            "message": "Analizuję obraz z AI..."
+                            "message": "Analyzing image with AI..."
                         })
 
                         # Call Gemini with timeout
@@ -155,7 +186,7 @@ async def user_websocket(ws: WebSocket):
                         await manager.send_to(ws, {
                             "type": "processing_status",
                             "status": "calling_ai",
-                            "message": "Analizuję obraz z AI (tryb awaryjny)..."
+                            "message": "Analyzing image with AI (fallback mode)..."
                         })
 
                         # Call Gemini Live with timeout
@@ -163,7 +194,7 @@ async def user_websocket(ws: WebSocket):
                             gemini_live_service.assist_navigation(
                                 image_bytes,
                                 loc,
-                                context="Użytkownik poprosił o opis otoczenia"
+                                context="User requested surroundings description"
                             ),
                             timeout=GEMINI_TIMEOUT
                         )
@@ -175,7 +206,7 @@ async def user_websocket(ws: WebSocket):
                     await manager.send_to(ws, {
                         "type": "processing_status",
                         "status": "synthesizing",
-                        "message": "Generuję mowę..."
+                        "message": "Generating speech..."
                     })
 
                     # Try to synthesize audio, but always send the text
@@ -207,7 +238,7 @@ async def user_websocket(ws: WebSocket):
                     await manager.send_to(ws, {
                         "type": "tts_audio",
                         "data": "",
-                        "text": "Przepraszam, odpowiedź trwa zbyt długo. Spróbuj ponownie.",
+                        "text": "Sorry, the response is taking too long. Please try again.",
                         "source": "error"
                     })
                 except Exception as exc:
@@ -216,7 +247,7 @@ async def user_websocket(ws: WebSocket):
                     await manager.send_to(ws, {
                         "type": "tts_audio",
                         "data": "",
-                        "text": "Wystąpił błąd podczas przetwarzania. Spróbuj ponownie.",
+                        "text": "An error occurred during processing. Please try again.",
                         "source": "error"
                     })
 

@@ -1,7 +1,7 @@
 """
 Text-to-speech service using edge-tts (Microsoft Edge TTS — free, no API key).
 
-Default voice: pl-PL-ZofiaNeural (Polish female).
+Default voice: en-US-AvaNeural (English female).
 
 TO REPLACE WITH ANOTHER TTS PROVIDER:
 - Google Cloud TTS: google-cloud-texttospeech
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class TTSService:
-    DEFAULT_VOICE = "pl-PL-ZofiaNeural"
+    DEFAULT_VOICE = "en-US-AvaNeural"
     MAX_RETRIES = 3
     RETRY_DELAY = 1.0  # seconds
     TIMEOUT = 10.0  # seconds

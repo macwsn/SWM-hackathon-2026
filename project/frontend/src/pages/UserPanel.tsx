@@ -87,6 +87,14 @@ export default function UserPanel() {
       console.log('[UserPanel] AI call started')
     }
 
+    if (msg.type === 'ai_call_rejected') {
+      console.log('[UserPanel] AI call rejected - caregiver available, using WebRTC instead')
+      // AI call was rejected because caregiver is available
+      // The useAIAudioCall hook will handle cleanup automatically
+      // Now initiate WebRTC call to caregiver
+      requestCall()
+    }
+
     if (msg.type === 'ai_audio_chunk') {
       // Play audio chunk from Gemini
       if (msg.data) {
@@ -141,6 +149,7 @@ export default function UserPanel() {
 
   useEffect(() => {
     const canvas = document.createElement('canvas')
+    let frameCount = 0
     const interval = setInterval(() => {
       const vid = videoRef.current
       const ws = processorWsRef.current
@@ -160,10 +169,30 @@ export default function UserPanel() {
       // Send frame without depth_mode so backend can use AUTO_DEPTH_MODE_WITH_GEMINI
       // Backend will auto-detect indoor/outdoor if enabled in config
       ws.send(JSON.stringify({ type: 'frame', data: b64, depth_mode: 'outdoor' }))
+
+      // Also send frame to main user WebSocket if AI call is active
+      if (aiCallState === 'active' && wsRef.current?.readyState === WebSocket.OPEN) {
+        frameCount++
+        if (frameCount % 10 === 1) {  // Log every 10th frame to reduce noise
+          console.log('[UserPanel] 📹 Sending frame #' + frameCount + ' to AI (size:', b64.length, 'bytes)')
+        }
+        wsRef.current.send(JSON.stringify({ type: 'frame', data: b64 }))
+      } else if (aiCallState === 'active') {
+        console.log('[UserPanel] ⚠️ AI call active but WebSocket not ready. State:', wsRef.current?.readyState, ', OPEN=', WebSocket.OPEN)
+      } else if (frameCount > 0) {
+        console.log('[UserPanel] ℹ️ AI call ended, sent', frameCount, 'frames total')
+        frameCount = 0
+      }
+
       waitingRef.current = true
     }, CAPTURE_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [])
+    return () => {
+      clearInterval(interval)
+      if (frameCount > 0) {
+        console.log('[UserPanel] 🛑 Interval cleared, sent', frameCount, 'frames total')
+      }
+    }
+  }, [aiCallState, wsRef])
 
   const handleDescribe = () => {
     void initPing()
@@ -173,13 +202,30 @@ export default function UserPanel() {
 
   const handleCallToggle = () => {
     void initPing()
+
+    // If AI call is active or starting, end it
+    if (aiCallState === 'active' || aiCallState === 'starting') {
+      console.log('[UserPanel] Ending AI call...')
+      endAICall()
+      return
+    }
+
+    // If WebRTC call is incoming, answer it
     if (callState === 'incoming') {
       answerCall()
-    } else if (callState === 'in-call' || callState === 'calling') {
-      hangUp()
-    } else {
-      requestCall()
+      return
     }
+
+    // If WebRTC call is active or calling, hang up
+    if (callState === 'in-call' || callState === 'calling') {
+      hangUp()
+      return
+    }
+
+    // Otherwise, try to start AI call first
+    // The backend will reject if caregiver is available, and we'll fall back to WebRTC
+    console.log('[UserPanel] Requesting help...')
+    void startAICall()
   }
 
   const handleTogglePing = () => {
@@ -304,12 +350,24 @@ export default function UserPanel() {
             disabled:opacity-50 disabled:cursor-not-allowed
             ${callState === 'in-call' || callState === 'calling' || callState === 'incoming'
               ? 'bg-brutal-green text-black'
+              : aiCallState === 'active'
+              ? 'bg-brutal-blue text-white'
               : aiCallState === 'starting'
               ? 'bg-brutal-yellow text-black'
               : 'bg-brutal-red text-white'
             }`}
         >
-          {callState === 'in-call' ? '📞 HANG UP' : callState === 'calling' ? '📞 CALLING…' : callState === 'incoming' ? '📞 ANSWER' : '🆘 HELP'}
+          {callState === 'in-call'
+            ? '📞 HANG UP'
+            : callState === 'calling'
+            ? '📞 CALLING…'
+            : callState === 'incoming'
+            ? '📞 ANSWER'
+            : aiCallState === 'active'
+            ? '🤖 DISCONNECT AI'
+            : aiCallState === 'starting'
+            ? '🤖 CONNECTING AI…'
+            : '🆘 HELP'}
         </button>
       </div>
 
@@ -368,15 +426,15 @@ function playAudio(base64mp3: string, fallbackText?: string) {
 function speakText(text: string) {
   try {
     const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'pl-PL'
+    utterance.lang = 'en-US'
     utterance.rate = 1.1
     utterance.volume = 1.0
 
-    // Try to find Polish voice
+    // Try to find English voice
     const voices = window.speechSynthesis.getVoices()
-    const polishVoice = voices.find(v => v.lang.startsWith('pl'))
-    if (polishVoice) {
-      utterance.voice = polishVoice
+    const englishVoice = voices.find(v => v.lang.startsWith('en'))
+    if (englishVoice) {
+      utterance.voice = englishVoice
     }
 
     window.speechSynthesis.cancel() // Stop any ongoing speech

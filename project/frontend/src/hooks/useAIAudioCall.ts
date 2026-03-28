@@ -15,6 +15,8 @@ export function useAIAudioCall(wsRef: React.MutableRefObject<WebSocket | null>) 
   const localStreamRef = useRef<MediaStream | null>(null)
   const audioQueueRef = useRef<Float32Array[]>([])
   const isPlayingRef = useRef(false)
+  const audioBufferRef = useRef<Int16Array>(new Int16Array(0))
+  const lastSendTimeRef = useRef<number>(0)
 
   // Start AI audio call
   const startAICall = useCallback(async () => {
@@ -37,31 +39,52 @@ export function useAIAudioCall(wsRef: React.MutableRefObject<WebSocket | null>) 
       // Create audio context for processing
       audioContextRef.current = new AudioContext({ sampleRate: 16000 })
       const source = audioContextRef.current.createMediaStreamSource(stream)
-      
-      // Create script processor to capture audio chunks
-      const processor = audioContextRef.current.createScriptProcessor(2048, 1, 1)
+
+      // Create script processor with larger buffer to reduce chunk frequency
+      // 8192 samples at 16kHz = ~512ms per chunk = ~2 chunks/second (down from 8/second)
+      const processor = audioContextRef.current.createScriptProcessor(8192, 1, 1)
       processorRef.current = processor
-      
+
+      // Minimum time between sends: 400ms (max ~2.5 chunks/second)
+      const MIN_SEND_INTERVAL_MS = 400
+
       processor.onaudioprocess = (e) => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) return
-        
+
         const inputData = e.inputBuffer.getChannelData(0)
-        
+
         // Convert Float32 to Int16 PCM
         const pcmData = new Int16Array(inputData.length)
         for (let i = 0; i < inputData.length; i++) {
           const s = Math.max(-1, Math.min(1, inputData[i]))
           pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
         }
-        
-        // Convert to base64
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)))
-        
-        // Send to backend
-        wsRef.current.send(JSON.stringify({
-          type: 'audio_chunk',
-          data: base64
-        }))
+
+        // Accumulate audio data in buffer
+        const newBuffer = new Int16Array(audioBufferRef.current.length + pcmData.length)
+        newBuffer.set(audioBufferRef.current)
+        newBuffer.set(pcmData, audioBufferRef.current.length)
+        audioBufferRef.current = newBuffer
+
+        // Throttle: Only send if enough time has passed
+        const now = Date.now()
+        if (now - lastSendTimeRef.current < MIN_SEND_INTERVAL_MS) {
+          return // Skip this chunk, will accumulate in buffer
+        }
+
+        // Send accumulated buffer
+        if (audioBufferRef.current.length > 0) {
+          const base64 = btoa(String.fromCharCode(...new Uint8Array(audioBufferRef.current.buffer)))
+
+          wsRef.current.send(JSON.stringify({
+            type: 'audio_chunk',
+            data: base64
+          }))
+
+          // Reset buffer and timestamp
+          audioBufferRef.current = new Int16Array(0)
+          lastSendTimeRef.current = now
+        }
       }
       
       source.connect(processor)
@@ -91,19 +114,21 @@ export function useAIAudioCall(wsRef: React.MutableRefObject<WebSocket | null>) 
       processorRef.current.disconnect()
       processorRef.current = null
     }
-    
+
     if (audioContextRef.current) {
       audioContextRef.current.close()
       audioContextRef.current = null
     }
-    
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop())
       localStreamRef.current = null
     }
-    
+
     audioQueueRef.current = []
     isPlayingRef.current = false
+    audioBufferRef.current = new Int16Array(0)
+    lastSendTimeRef.current = 0
   }, [])
 
   // Play received audio chunk
@@ -170,6 +195,57 @@ export function useAIAudioCall(wsRef: React.MutableRefObject<WebSocket | null>) 
       audioContextRef.current.suspend()
     }
   }, [])
+
+  // Listen for AI call state changes from backend
+  useEffect(() => {
+    const ws = wsRef.current
+    if (!ws) return
+
+    const originalOnMessage = ws.onmessage
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+
+        // Handle AI call started confirmation
+        if (msg.type === 'ai_call_started') {
+          setAICallState('active')
+        }
+
+        // Handle AI call rejected (e.g., caregiver available)
+        if (msg.type === 'ai_call_rejected') {
+          console.log('[AIAudioCall] Call rejected:', msg.reason)
+          setError(msg.reason || 'AI call unavailable')
+          cleanup()
+          setAICallState('idle')
+        }
+
+        // Handle AI call ended confirmation
+        if (msg.type === 'ai_call_ended') {
+          cleanup()
+          setAICallState('idle')
+        }
+
+        // Handle AI call error
+        if (msg.type === 'ai_call_error') {
+          setError(msg.message || 'AI call error')
+          cleanup()
+          setAICallState('error')
+        }
+      } catch (e) {
+        // Ignore JSON parse errors
+      }
+
+      // Call original handler if it exists
+      if (originalOnMessage) {
+        originalOnMessage.call(ws, event)
+      }
+    }
+
+    return () => {
+      ws.onmessage = originalOnMessage
+    }
+  }, [wsRef, cleanup])
 
   // Cleanup on unmount
   useEffect(() => {

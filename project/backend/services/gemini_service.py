@@ -56,22 +56,22 @@ class GeminiService:
     async def describe_surroundings(
         self, image_bytes: bytes, location: dict
     ) -> str:
-        """Returns Polish description of surroundings (max 2 sentences)."""
+        """Returns English description of surroundings (max 2 sentences)."""
         if USE_MOCK_GEMINI or not GEMINI_API_KEY:
             return gemini_mock.get_describe_surroundings()
         try:
             lat = location.get("lat", 0)
             lon = location.get("lon", 0)
             prompt = (
-                f"Jesteś asystentem dla osoby niewidomej. "
-                f"Lokalizacja GPS: {lat:.5f}, {lon:.5f}. "
-                "Opisz krótko co widzisz na obrazie, jesli widzisz przeszkody to opisz je "
-                "i ważnych elementach otoczenia. Odpowiedz po angielsku, maksymalnie 2 zdania."
+                f"You are an assistant for a blind person. "
+                f"GPS Location: {lat:.5f}, {lon:.5f}. "
+                "Briefly describe what you see in the image. If you see obstacles, describe them "
+                "and important environmental elements. Respond in English, maximum 2 sentences."
             )
             return await self._call(image_bytes, prompt)
         except Exception as exc:
             logger.exception("[Gemini] describe_surroundings failed")
-            return "Nie udało się opisać otoczenia."
+            return "Failed to describe surroundings."
 
     async def get_simple_description(self, image_bytes: bytes) -> str:
         """Returns 1-sentence movement description for stats panel."""
