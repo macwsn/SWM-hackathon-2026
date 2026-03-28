@@ -9,6 +9,19 @@ load_dotenv()
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
 # ──────────────────────────────────────────────────────────────
+# Gemini Model Configuration
+# ──────────────────────────────────────────────────────────────
+# Standard Gemini model for general use (caregiver present)
+# Using 2.5-flash-lite for fastest performance and lowest cost
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+
+# Gemini Live model for AI fallback (no caregiver)
+# IMPORTANT: Only specific models support the Live API (bidiGenerateContent)
+# Supported model: gemini-3.1-flash-live-preview
+# See: https://ai.google.dev/api/live
+GEMINI_LIVE_MODEL: str = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+
+# ──────────────────────────────────────────────────────────────
 # Mock Services
 # ──────────────────────────────────────────────────────────────
 USE_MOCK_GEMINI: bool = os.getenv("USE_MOCK_GEMINI", "true").lower() == "true"

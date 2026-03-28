@@ -33,11 +33,12 @@ async def caregiver_websocket(ws: WebSocket):
             if msg_type == "send_voice_text":
                 text = data.get("text", "").strip()
                 if text:
+                    # Try to synthesize audio, but always send the text
                     audio_b64 = await tts_service.synthesize_b64(text)
                     await manager.broadcast("user", {
                         "type": "tts_audio",
-                        "data": audio_b64,
-                        "text": text,
+                        "data": audio_b64,  # Empty string if TTS failed
+                        "text": text,  # Always send text (client can use Web Speech API as fallback)
                         "from": "caregiver",
                     })
 
