@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+backend/venv/
+
+# Build
+frontend/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+_tts_temp.wav
+
+# ML Models (downloaded at runtime)
+*.pt
+*.onnx
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
