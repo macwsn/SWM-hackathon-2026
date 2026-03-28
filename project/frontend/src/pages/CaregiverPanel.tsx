@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { wsUrl } from '../lib/wsUrl'
 import { useWebRTC } from '../hooks/useWebRTC'
+import { wsUrl } from '../lib/wsUrl'
 import AlertChat from '../components/AlertChat'
 import MapView from '../components/MapView'
 import type { AlertMessage, LocationData } from '../types'
@@ -11,7 +11,7 @@ const MAX_ALERTS = 50
 
 export default function CaregiverPanel() {
   const { lastMessage, status, send } = useWebSocket(wsUrl('/ws/caregiver'))
-  const { callState, startCall, hangUp } = useWebRTC('caregiver')
+  const { callState, startCall, answerCall, hangUp } = useWebRTC('caregiver')
 
   const [alerts, setAlerts] = useState<AlertMessage[]>([])
   const [location, setLocation] = useState<LocationData | null>(null)
@@ -19,7 +19,6 @@ export default function CaregiverPanel() {
   const [voiceText, setVoiceText] = useState('')
   const [lastFrame, setLastFrame] = useState<string | null>(null)
 
-  // Remote frames handled via WebSocket
   useEffect(() => {
     if (!lastMessage) return
     const msg = lastMessage as { type: string; data?: string; text?: string; distance?: number; is_indoor?: boolean; timestamp?: number; lat?: number; lon?: number; speed?: number; heading?: number }
@@ -119,18 +118,32 @@ export default function CaregiverPanel() {
             </div>
           </div>
 
+          {/* Incoming call banner */}
+          {callState === 'incoming' && (
+            <div className="flex-shrink-0 bg-brutal-yellow border-y-4 border-black p-3 flex flex-col gap-2 animate-pulse">
+              <p className="font-black uppercase text-black text-lg text-center">📞 UŻYTKOWNIK DZWONI!</p>
+              <div className="flex gap-2">
+                <button onClick={startCall} className="flex-1 btn-brutal bg-brutal-green text-black font-black text-sm py-2 uppercase">ODBIERZ</button>
+                <button onClick={hangUp} className="flex-1 btn-brutal bg-brutal-red text-white font-black text-sm py-2 uppercase">ODRZUĆ</button>
+              </div>
+            </div>
+          )}
+
           {/* Voice controls */}
           <div className="p-3 flex-shrink-0 bg-gray-50">
             {/* WebRTC call */}
             <button
               onClick={callState === 'in-call' ? hangUp : startCall}
+              disabled={callState === 'incoming'}
               className={`btn-brutal w-full mb-2 text-sm py-2 ${
                 callState === 'in-call'
-                  ? 'bg-brutal-red text-white'
-                  : 'bg-brutal-green text-black'
+                  ? 'bg-brutal-green text-black'
+                  : callState === 'calling'
+                  ? 'bg-brutal-yellow text-black'
+                  : 'bg-brutal-blue text-white'
               }`}
             >
-              {callState === 'in-call' ? '📞 ROZŁĄCZ' : callState === 'calling' ? '📞 DZWONIENIE…' : '📞 ZADZWOŃ DO UŻYTKOWNIKA'}
+              {callState === 'in-call' ? '📞 ROZŁĄCZ' : callState === 'calling' ? '📞 DZWONI…' : '📞 ZADZWOŃ DO UŻYTKOWNIKA'}
             </button>
 
             {/* Text→TTS fallback */}

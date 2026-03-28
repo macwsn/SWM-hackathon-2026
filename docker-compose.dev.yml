@@ -1,0 +1,85 @@
+# ═══════════════════════════════════════════════════════════════
+# Docker Compose Development Override
+# ═══════════════════════════════════════════════════════════════
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# This file provides hot-reloading for both frontend and backend:
+# - Backend: Uvicorn auto-reload on code changes
+# - Frontend: Vite dev server with HMR (Hot Module Replacement)
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ─────────────────────────────────────────────────────────────
+  # Frontend - Development Mode with Vite HMR
+  # ─────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./project/frontend
+      dockerfile: Dockerfile.dev
+      # Add cache mounts for faster rebuilds
+      cache_from:
+        - type=registry,ref=frontend-dev-cache
+    ports:
+      - "5173:5173"  # Vite dev server
+    volumes:
+      # Mount source files only (not root)
+      - ./project/frontend/src:/app/src:cached
+      - ./project/frontend/public:/app/public:cached
+      - ./project/frontend/index.html:/app/index.html:cached
+      - ./project/frontend/vite.config.ts:/app/vite.config.ts:cached
+      - ./project/frontend/tailwind.config.js:/app/tailwind.config.js:cached
+      - ./project/frontend/postcss.config.js:/app/postcss.config.js:cached
+      - ./project/frontend/tsconfig.json:/app/tsconfig.json:cached
+      - ./project/frontend/tsconfig.node.json:/app/tsconfig.node.json:cached
+      # Named volume for node_modules (persists between rebuilds)
+      - frontend-node-modules:/app/node_modules
+    environment:
+      - VITE_API_URL=http://backend:8000
+      - VITE_WS_URL=ws://backend:8000
+    command: npm run dev -- --host 0.0.0.0
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5173/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # ─────────────────────────────────────────────────────────────
+  # Backend - Development Mode with Uvicorn Auto-Reload
+  # ─────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./project/backend
+      dockerfile: Dockerfile.dev
+      # Add cache mounts for faster rebuilds
+      cache_from:
+        - type=registry,ref=backend-dev-cache
+    volumes:
+      # Mount only necessary source files (not the whole directory)
+      - ./project/backend/main.py:/app/main.py:cached
+      - ./project/backend/config.py:/app/config.py:cached
+      - ./project/backend/.env:/app/.env:cached
+      - ./project/backend/routers:/app/routers:cached
+      - ./project/backend/services:/app/services:cached
+      - ./project/backend/mocks:/app/mocks:cached
+      # Keep Python packages in named volume (persists between rebuilds)
+      - backend-python-packages:/usr/local/lib/python3.11/site-packages
+      # Keep models in persistent volume (downloads ~2GB once)
+      - model-cache:/app/models
+      # Keep video input directory
+      - ./project/backend/video_input:/app/video_input:cached
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WATCHFILES_FORCE_POLLING=false  # Use native file watching
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
+
+# ═══════════════════════════════════════════════════════════════
+# VOLUMES - Persistent dependency caches
+# ═══════════════════════════════════════════════════════════════
+volumes:
+  model-cache:
+    # Persistent model storage (~2GB)
+  frontend-node-modules:
+    # Persists npm packages between container rebuilds
+  backend-python-packages:
+    # Persists Python packages between container rebuilds
+

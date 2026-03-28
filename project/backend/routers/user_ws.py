@@ -5,8 +5,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from PIL import Image
 
 from mocks.location_mock import location_mock
-from mocks.smelter_mock import smelter_mock
 from routers.websocket_manager import manager
+from routers import processor_ws
 from services.gemini_service import gemini_service
 from services.tts_service import tts_service
 
@@ -28,8 +28,8 @@ async def user_websocket(ws: WebSocket):
     Sends to client:
       {"type": "tts_audio", "data": "<base64 MP3>", "text": str}
           — obstacle alert or surroundings description to be played via Audio API.
-      {"type": "obstacle_alert", "text": str, "distance": float}
-          — also sent as tts_audio; this duplicate is for any UI overlay.
+      {"type": "obstacle_ping", "distance": float, "direction": "left"|"center"|"right", "severity": "WARNING"|"CRITICAL"}
+          — spatial ping event for obstacle alerts in headphones.
     """
     await manager.connect("user", ws)
     try:
@@ -38,7 +38,10 @@ async def user_websocket(ws: WebSocket):
             msg_type = data.get("type")
 
             if msg_type == "describe_request":
-                frame = smelter_mock.get_current_frame()
+                frame = processor_ws.latest_frame
+                if frame is None:
+                    # No frame available yet
+                    continue
                 img = Image.fromarray(frame)
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG", quality=85)

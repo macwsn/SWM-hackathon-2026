@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { wsUrl } from '../lib/wsUrl'
 import DepthVisualization from '../components/DepthVisualization'
@@ -17,7 +17,8 @@ export default function StatsPanel() {
   const [metrics, setMetrics] = useState<MetricsData[]>([])
   const [geminiItems, setGeminiItems] = useState<GeminiDescription[]>([])
   const [lastFrame, setLastFrame] = useState<string | null>(null)
-  // --- /ws/stats messages (metrics, gemini, frame, analysis) ---
+
+  // --- /ws/stats messages (metrics + gemini) ---
   useEffect(() => {
     if (!lastMessage) return
     const msg = lastMessage as { type: string; data?: string; depth_frame?: string; min_distance?: number; inference_ms?: number; is_indoor?: boolean } & Record<string, unknown>
