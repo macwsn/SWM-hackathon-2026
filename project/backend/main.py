@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
     await depth_model_service.initialize()
     asyncio.create_task(location_mock.run(), name="location_mock")
     asyncio.create_task(gemini_mock.run(), name="gemini_mock")
+    asyncio.create_task(processor_ws.auto_update_depth_mode_loop(), name="auto_depth_mode_loop")
     logger.info("All background tasks started")
     yield
     # ── Shutdown (nothing to clean) ───────────────────────────────────
