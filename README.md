@@ -294,4 +294,4 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-**Questions?** Open an [issue](https://github.com/radbene/SWM-Hackathon-2026/issues) or check the [documentation](ARCHITECTURE_SUMMARY.md).
+**Questions?** Open an [issue](https://github.com/radbene/SWM-Hackathon-2026/issues) or check the [documentation](ARCHITECTURE_SUMMARY.md)
