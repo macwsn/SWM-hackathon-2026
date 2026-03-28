@@ -13,7 +13,7 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
 
   const [isConnected, setIsConnected] = useState(false)
   const [callState, setCallState] = useState<'idle' | 'calling'>('idle')
-  const [incomingCall, setIncomingCall] = useState(false)
+
   const [minDist, setMinDist] = useState<number | null>(null)
 
   // Start rear camera
@@ -75,7 +75,8 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
           if (data.type === 'redirect' && data.to) {
             navigate(data.to)
           } else if (data.type === 'incoming_call') {
-            setIncomingCall(true)
+            // Auto-accept: immediately send accept and let backend redirect
+            ws.send(JSON.stringify({ type: 'accept_incoming_call', user_id: userId }))
           }
         } catch {}
       }
@@ -130,16 +131,6 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
     }
   }
 
-  const handleAcceptIncomingCall = () => {
-    if (signalWsRef.current?.readyState === WebSocket.OPEN) {
-      signalWsRef.current.send(JSON.stringify({ type: 'accept_incoming_call', user_id: userId }))
-    }
-    setIncomingCall(false)
-  }
-
-  const handleRejectIncomingCall = () => {
-    setIncomingCall(false)
-  }
 
   const distColor = minDist !== null
     ? minDist < 1.0 ? 'bg-brutal-red' : minDist < 2.0 ? 'bg-brutal-yellow' : 'bg-brutal-green'
