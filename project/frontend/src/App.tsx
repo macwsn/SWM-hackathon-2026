@@ -1,7 +1,9 @@
-import { BrowserRouter, Route, Routes, Link } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, Link, useParams } from 'react-router-dom'
 import UserPanel from './pages/UserPanel'
 import CaregiverPanel from './pages/CaregiverPanel'
 import StatsPanel from './pages/StatsPanel'
+import MultiAssistantPanel from './pages/MultiAssistantPanel'
+import MultiUserPanel from './pages/MultiUserPanel'
 import { FishjamProvider } from '@fishjam-cloud/react-client'
 
 function Home() {
@@ -20,10 +22,23 @@ function Home() {
           <Link to="/stats" className="btn-brutal bg-brutal-pink text-black text-lg py-4 text-center">
             STATYSTYKI
           </Link>
+          <Link to="/multiassistant" className="btn-brutal bg-black text-white text-lg py-4 text-center">
+            MULTI ASSISTANT
+          </Link>
+          <div className="flex gap-2 mt-2">
+            <Link to="/user/user1" className="btn-brutal bg-brutal-green text-black text-sm py-2 flex-1 text-center">USER 1</Link>
+            <Link to="/user/user2" className="btn-brutal bg-brutal-green text-black text-sm py-2 flex-1 text-center">USER 2</Link>
+            <Link to="/user/user3" className="btn-brutal bg-brutal-green text-black text-sm py-2 flex-1 text-center">USER 3</Link>
+          </div>
         </div>
       </div>
     </div>
   )
+}
+
+function MultiUserPanelWithId() {
+  const { id } = useParams<{ id: string }>()
+  return <MultiUserPanel userId={id ?? 'user1'} />
 }
 
 export default function App() {
@@ -33,8 +48,10 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/user" element={<UserPanel />} />
+          <Route path="/user/:id" element={<MultiUserPanelWithId />} />
           <Route path="/caregiver" element={<CaregiverPanel />} />
           <Route path="/stats" element={<StatsPanel />} />
+          <Route path="/multiassistant" element={<MultiAssistantPanel />} />
         </Routes>
       </BrowserRouter>
     </FishjamProvider>

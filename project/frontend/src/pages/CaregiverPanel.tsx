@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useWebRTC } from '../hooks/useWebRTC'
 import { wsUrl } from '../lib/wsUrl'
@@ -12,6 +12,18 @@ const MAX_ALERTS = 50
 export default function CaregiverPanel() {
   const { lastMessage, status, send } = useWebSocket(wsUrl('/ws/caregiver'))
   const { callState, startCall, answerCall, hangUp } = useWebRTC('caregiver')
+  const autoCallDone = useRef(false)
+
+  // Auto-start call when redirected with ?call=auto
+  useEffect(() => {
+    if (autoCallDone.current) return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('call') === 'auto') {
+      autoCallDone.current = true
+      // Small delay to let WebRTC WS connect first
+      setTimeout(() => startCall(), 1000)
+    }
+  }, [startCall])
 
   const [alerts, setAlerts] = useState<AlertMessage[]>([])
   const [location, setLocation] = useState<LocationData | null>(null)

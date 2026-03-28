@@ -156,10 +156,9 @@ export function useWebRTC(role: 'user' | 'caregiver') {
             break
 
           case 'offer':
-            if (waitingForOfferRef.current) {
-              // User requested the call, auto-answer the offer from caregiver
-              pendingOfferRef.current = data.sdp
-              // Small delay to ensure mic permission prompt shows on user gesture
+            if (role === 'user') {
+              // User always auto-answers (no accept prompt)
+              unlockAudio()
               const pc = createPC()
               try {
                 const stream = await getMic()
@@ -177,7 +176,7 @@ export function useWebRTC(role: 'user' | 'caregiver') {
                 setCallState('idle')
               }
             } else {
-              // Normal incoming call
+              // Caregiver sees incoming call
               pendingOfferRef.current = data.sdp
               setCallState('incoming')
             }

@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import DEPTH_INFERENCE_INTERVAL, CORS_ORIGINS
 from mocks.gemini_mock import gemini_mock
 from mocks.location_mock import location_mock
-from routers import user_ws, caregiver_ws, stats_ws, processor_ws, webrtc
+from routers import user_ws, caregiver_ws, stats_ws, processor_ws, webrtc, multi_ws
 from routers.websocket_manager import manager
 from services.depth_model import depth_model_service
 from services.obstacle_detector import obstacle_detector
@@ -58,6 +58,7 @@ app.include_router(caregiver_ws.router)
 app.include_router(stats_ws.router)
 app.include_router(processor_ws.router)
 app.include_router(webrtc.router)
+app.include_router(multi_ws.router)
 
 
 @app.get("/health")
