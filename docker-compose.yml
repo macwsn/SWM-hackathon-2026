@@ -35,7 +35,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://localhost:5173
-      - USE_MOCK_GEMINI=true
+      - USE_MOCK_GEMINI=false
       - USE_MOCK_SMELTER=true
       - USE_MOCK_LOCATION=true
       - USE_MOCK_DEPTH=false
