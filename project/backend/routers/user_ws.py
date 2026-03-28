@@ -65,42 +65,31 @@ async def user_websocket(ws: WebSocket):
                 # User wants to start live audio call with AI
                 logger.info("[User] 🎙️ Start AI call request received")
 
-                # 🔧 DEBUG MODE: Force AI connection regardless of caregiver availability
-                logger.warning("[User] 🔧 DEBUG MODE: Forcing AI connection (bypassing caregiver check)")
-
-                try:
+                # Check if caregiver is available - if so, reject AI call
+                if gemini_live_service.is_caregiver_available():
+                    logger.info("[User] ❌ AI call rejected - caregiver is available, use WebRTC instead")
+                    await manager.send_to(ws, {
+                        "type": "ai_call_rejected",
+                        "reason": "Caregiver is available, please use the regular call button"
+                    })
+                else:
                     # Start live session with Gemini
-                    logger.info("[User] ✅ Starting Gemini Live audio session - FORCED FOR DEBUGGING")
-                    await gemini_live_service.start_live_session(ws)
-                    await manager.send_to(ws, {
-                        "type": "ai_call_started"
-                    })
-                    logger.info("[User] ✅ AI call started successfully")
-                except Exception as start_exc:
-                    logger.error(f"[User] ❌ Failed to start AI call: {start_exc}")
-                    logger.error(f"[User] Exception type: {type(start_exc).__name__}")
-                    import traceback
-                    logger.error(f"[User] Stack trace:\n{traceback.format_exc()}")
-                    await manager.send_to(ws, {
-                        "type": "ai_call_error",
-                        "message": str(start_exc)
-                    })
-
-                # ORIGINAL CODE (commented out for debugging):
-                # # Check if caregiver is available - if so, reject AI call
-                # if gemini_live_service.is_caregiver_available():
-                #     logger.info("[User] ❌ AI call rejected - caregiver is available, use WebRTC instead")
-                #     await manager.send_to(ws, {
-                #         "type": "ai_call_rejected",
-                #         "reason": "Caregiver is available, please use the regular call button"
-                #     })
-                # else:
-                #     # Start live session with Gemini
-                #     logger.info("[User] ✅ Starting Gemini Live audio session - NO caregiver available")
-                #     await gemini_live_service.start_live_session(ws)
-                #     await manager.send_to(ws, {
-                #         "type": "ai_call_started"
-                #     })
+                    logger.info("[User] ✅ Starting Gemini Live audio session - NO caregiver available")
+                    try:
+                        await gemini_live_service.start_live_session(ws)
+                        await manager.send_to(ws, {
+                            "type": "ai_call_started"
+                        })
+                        logger.info("[User] ✅ AI call started successfully")
+                    except Exception as start_exc:
+                        logger.error(f"[User] ❌ Failed to start AI call: {start_exc}")
+                        logger.error(f"[User] Exception type: {type(start_exc).__name__}")
+                        import traceback
+                        logger.error(f"[User] Stack trace:\n{traceback.format_exc()}")
+                        await manager.send_to(ws, {
+                            "type": "ai_call_error",
+                            "message": str(start_exc)
+                        })
 
             elif msg_type == "audio_chunk":
                 # Forward audio chunk to Gemini Live session
