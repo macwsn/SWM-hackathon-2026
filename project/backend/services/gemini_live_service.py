@@ -79,7 +79,6 @@ class GeminiLiveService:
             True if at least one caregiver is connected, False otherwise.
         """
         caregiver_count = len(manager.connections.get("caregiver", set()))
-        logger.info(f"[GeminiLive] Caregiver availability check: {caregiver_count} connected")
         return caregiver_count > 0
 
     def is_live_session_active(self) -> bool:
@@ -206,58 +205,38 @@ class GeminiLiveService:
         Args:
             user_ws: WebSocket connection to the user frontend
         """
-        logger.info("[GeminiLive] 🚀 Starting live session...")
-        logger.debug(f"[GeminiLive] User WebSocket: {user_ws}")
-
         if self._live_ws is not None:
-            logger.warning("[GeminiLive] ⚠️ Live session already active, ending previous session")
             await self.end_live_session()
 
         self._user_ws = user_ws
 
-        # Use mock if configured
         if USE_MOCK_GEMINI or not GEMINI_API_KEY:
-            logger.info("[GeminiLive] 🎭 Using MOCK live session (no real API connection)")
-            logger.debug(f"[GeminiLive] Mock mode: USE_MOCK_GEMINI={USE_MOCK_GEMINI}, API_KEY_configured={bool(GEMINI_API_KEY)}")
+            logger.warning("[GeminiLive] Mock mode enabled, no real API connection")
             return
 
         try:
-            # Connect to Gemini Live WebSocket API (Beta endpoint for Multimodal Live)
-            # URL format: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=API_KEY
             ws_url = (
                 "wss://generativelanguage.googleapis.com/ws/"
                 "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
                 f"?key={GEMINI_API_KEY}"
             )
 
-            # Log URL without exposing full API key
-            safe_url = ws_url.replace(GEMINI_API_KEY, f"{GEMINI_API_KEY[:10]}...")
-            logger.info(f"[GeminiLive] 🔌 Connecting to Gemini Live API...")
-            logger.debug(f"[GeminiLive] WebSocket URL: {safe_url}")
-            logger.debug(f"[GeminiLive] Model: {GEMINI_LIVE_MODEL}")
-
             self._live_ws = await websockets.connect(ws_url)
-            logger.info(f"[GeminiLive] ✅ WebSocket connection established")
-            logger.debug(f"[GeminiLive] WebSocket state: {self._live_ws.state}")
 
-            # 1. SETUP PHASE - Send initial configuration
-            # Per GEMINI_LIVE.md: BidiGenerateContentSetup message format
             setup_message = {
                 "setup": {
                     "model": f"models/{GEMINI_LIVE_MODEL}",
-                    "generationConfig": {  # Note: camelCase for API compatibility
+                    "generationConfig": {
                         "responseModalities": ["AUDIO"],
                         "speechConfig": {
                             "voiceConfig": {
                                 "prebuiltVoiceConfig": {
-                                    "voiceName": "Puck"  # Voice optimized for navigation (try 'Puck', 'Charon', or 'Kore')
+                                    "voiceName": "Puck"
                                 }
                             }
                         }
                     },
                     "realtimeInputConfig": {
-                        # Include audio activity and ALL video frames in the turn
-                        # This ensures the model processes video frames even during silence
                         "turnCoverage": "TURN_INCLUDES_AUDIO_ACTIVITY_AND_ALL_VIDEO"
                     },
                     "systemInstruction": {
@@ -268,53 +247,17 @@ class GeminiLiveService:
                 }
             }
 
-            logger.info(f"[GeminiLive] 📤 Sending setup message...")
-            logger.debug(f"[GeminiLive] Setup message: {json.dumps(setup_message, indent=2)}")
-
             await self._live_ws.send(json.dumps(setup_message))
-            logger.info(f"[GeminiLive] ✅ Setup message sent successfully")
-
-            # Wait for setup completion before allowing audio
-            logger.info(f"[GeminiLive] ⏳ Waiting for setup completion from Gemini...")
             first_resp = await self._live_ws.recv()
-            logger.debug(f"[GeminiLive] 📥 Raw response from Gemini: {first_resp}")
-
             setup_status = json.loads(first_resp)
-            logger.info(f"[GeminiLive] 📥 Received setup response from Gemini")
-            logger.debug(f"[GeminiLive] Setup response JSON: {json.dumps(setup_status, indent=2)}")
 
-            if "setupComplete" in setup_status:
-                logger.info("[GeminiLive] ✅ Setup Complete - Ready for audio streaming")
-                logger.debug(f"[GeminiLive] Setup completion details: {setup_status.get('setupComplete', {})}")
-            else:
-                logger.warning(f"[GeminiLive] ⚠️ Unexpected setup response structure")
-                logger.warning(f"[GeminiLive] Expected 'setupComplete' field, got: {list(setup_status.keys())}")
-                logger.warning(f"[GeminiLive] Full response: {json.dumps(setup_status, indent=2)}")
+            if "setupComplete" not in setup_status:
+                logger.warning(f"[GeminiLive] Unexpected setup response: {list(setup_status.keys())}")
 
-            # 2. Start background task to receive audio responses
-            logger.info("[GeminiLive] 🎧 Starting background audio receive loop...")
             self._live_session_task = asyncio.create_task(self._receive_audio_loop())
-            logger.info("[GeminiLive] ✅ Live session fully initialized and ready")
 
-        except websockets.exceptions.WebSocketException as exc:
-            logger.error(f"[GeminiLive] ❌ WebSocket error during connection: {exc}")
-            logger.error(f"[GeminiLive] WebSocket exception type: {type(exc).__name__}")
-            logger.error(f"[GeminiLive] WebSocket exception details: {str(exc)}")
-            self._live_ws = None
-            self._user_ws = None
-            raise
-        except json.JSONDecodeError as exc:
-            logger.error(f"[GeminiLive] ❌ JSON decode error in setup response: {exc}")
-            logger.error(f"[GeminiLive] Failed to parse response, raw data may be logged above")
-            self._live_ws = None
-            self._user_ws = None
-            raise
         except Exception as exc:
-            logger.error(f"[GeminiLive] ❌ Unexpected error during live session start: {exc}")
-            logger.error(f"[GeminiLive] Exception type: {type(exc).__name__}")
-            logger.error(f"[GeminiLive] Exception details: {str(exc)}")
-            import traceback
-            logger.error(f"[GeminiLive] Stack trace:\n{traceback.format_exc()}")
+            logger.error(f"[GeminiLive] Failed to start live session: {exc}")
             self._live_ws = None
             self._user_ws = None
             raise
@@ -326,50 +269,24 @@ class GeminiLiveService:
         Args:
             audio_base64: Base64-encoded PCM audio (16-bit, 16kHz, mono)
         """
-        if USE_MOCK_GEMINI or not GEMINI_API_KEY:
-            # Mock mode - just log
-            logger.debug(f"[GeminiLive] 🎭 MOCK: Received {len(audio_base64)} bytes of audio")
+        if USE_MOCK_GEMINI or not GEMINI_API_KEY or self._live_ws is None:
             return
 
-        if self._live_ws is None:
-            logger.warning("[GeminiLive] ⚠️ Cannot send audio - no active live session")
-            logger.debug(f"[GeminiLive] WebSocket state: {self._live_ws}")
+        if hasattr(self._live_ws, 'closed') and self._live_ws.closed:
             return
 
-        # Check if WebSocket is closed (safely)
         try:
-            if hasattr(self._live_ws, 'closed') and self._live_ws.closed:
-                logger.error("[GeminiLive] ❌ Cannot send audio - WebSocket is closed")
-                logger.error(f"[GeminiLive] WebSocket close code: {self._live_ws.close_code}")
-                logger.error(f"[GeminiLive] WebSocket close reason: {self._live_ws.close_reason}")
-                return
-        except Exception as e:
-            logger.debug(f"[GeminiLive] Could not check WebSocket closed status: {e}")
-
-        try:
-            # 2. REALTIME INPUT PHASE
-            # Per GEMINI_LIVE.md: Use 'realtimeInput' with 'audio' field (not deprecated 'mediaChunks')
             message = {
                 "realtimeInput": {
                     "audio": {
                         "data": audio_base64,
-                        "mimeType": "audio/pcm"  # Ensure this matches 16kHz Mono PCM format
+                        "mimeType": "audio/pcm"
                     }
                 }
             }
-
-            logger.debug(f"[GeminiLive] 📤 Sending audio chunk ({len(audio_base64)} bytes)...")
             await self._live_ws.send(json.dumps(message))
-            logger.debug(f"[GeminiLive] ✅ Audio chunk sent successfully")
-
-        except websockets.exceptions.ConnectionClosed as exc:
-            logger.error(f"[GeminiLive] ❌ WebSocket closed while sending audio: {exc}")
-            logger.error(f"[GeminiLive] Close code: {exc.code}, reason: {exc.reason}")
         except Exception as exc:
-            logger.error(f"[GeminiLive] ❌ Failed to send audio chunk: {exc}")
-            logger.error(f"[GeminiLive] Exception type: {type(exc).__name__}")
-            import traceback
-            logger.debug(f"[GeminiLive] Stack trace:\n{traceback.format_exc()}")
+            logger.error(f"[GeminiLive] Failed to send audio chunk: {exc}")
 
     async def send_video_frame(self, image_base64: str):
         """
@@ -378,26 +295,13 @@ class GeminiLiveService:
         Args:
             image_base64: Base64-encoded JPEG image
         """
-        if USE_MOCK_GEMINI or not GEMINI_API_KEY:
-            # Mock mode - just log
-            logger.debug(f"[GeminiLive] 🎭 MOCK: Received {len(image_base64)} bytes of video")
+        if USE_MOCK_GEMINI or not GEMINI_API_KEY or self._live_ws is None:
             return
 
-        if self._live_ws is None:
-            logger.warning("[GeminiLive] ⚠️ Cannot send video - no active live session")
+        if hasattr(self._live_ws, 'closed') and self._live_ws.closed:
             return
 
-        # Check if WebSocket is closed (safely)
         try:
-            if hasattr(self._live_ws, 'closed') and self._live_ws.closed:
-                logger.error("[GeminiLive] ❌ Cannot send video - WebSocket is closed")
-                return
-        except Exception as e:
-            logger.debug(f"[GeminiLive] Could not check WebSocket closed status: {e}")
-
-        try:
-            # Send video frame via realtimeInput with 'video' field
-            # Per GEMINI_LIVE.md: realtimeInput supports audio, video, and text fields
             message = {
                 "realtimeInput": {
                     "video": {
@@ -406,55 +310,30 @@ class GeminiLiveService:
                     }
                 }
             }
-
-            logger.info(f"[GeminiLive] 📹 Sending video frame ({len(image_base64)} bytes)...")
             await self._live_ws.send(json.dumps(message))
-            logger.info(f"[GeminiLive] ✅ Video frame sent successfully")
-
-        except websockets.exceptions.ConnectionClosed as exc:
-            logger.error(f"[GeminiLive] ❌ WebSocket closed while sending video: {exc}")
-            logger.error(f"[GeminiLive] Close code: {exc.code}, reason: {exc.reason}")
         except Exception as exc:
-            logger.error(f"[GeminiLive] ❌ Failed to send video frame: {exc}")
-            logger.error(f"[GeminiLive] Exception type: {type(exc).__name__}")
-            import traceback
-            logger.debug(f"[GeminiLive] Stack trace:\n{traceback.format_exc()}")
+            logger.error(f"[GeminiLive] Failed to send video frame: {exc}")
 
     async def end_live_session(self):
         """End the live audio session with Gemini."""
-        logger.info("[GeminiLive] 🔴 Ending live session...")
-        logger.debug(f"[GeminiLive] Session task active: {self._live_session_task is not None}")
-        logger.debug(f"[GeminiLive] WebSocket active: {self._live_ws is not None}")
-        logger.debug(f"[GeminiLive] User WebSocket active: {self._user_ws is not None}")
-
-        # Cancel the receive loop
         if self._live_session_task:
-            logger.info("[GeminiLive] 🛑 Cancelling receive loop task...")
             self._live_session_task.cancel()
             try:
                 await self._live_session_task
-                logger.info("[GeminiLive] ✅ Receive loop task cancelled successfully")
             except asyncio.CancelledError:
-                logger.debug("[GeminiLive] Receive loop task cancellation confirmed")
+                pass
             except Exception as exc:
-                logger.error(f"[GeminiLive] ❌ Error while cancelling receive loop: {exc}")
+                logger.error(f"[GeminiLive] Error cancelling receive loop: {exc}")
             self._live_session_task = None
 
-        # Close WebSocket to Gemini
         if self._live_ws:
-            logger.info("[GeminiLive] 🔌 Closing WebSocket connection to Gemini...")
-            logger.debug(f"[GeminiLive] WebSocket state before close: {self._live_ws.state}")
             try:
                 await self._live_ws.close()
-                logger.info("[GeminiLive] ✅ WebSocket closed successfully")
             except Exception as exc:
-                logger.warning(f"[GeminiLive] ⚠️ Error closing WebSocket: {exc}")
-                logger.debug(f"[GeminiLive] Exception type: {type(exc).__name__}")
+                logger.error(f"[GeminiLive] Error closing WebSocket: {exc}")
             self._live_ws = None
 
         self._user_ws = None
-        logger.info("[GeminiLive] ✅ Live session ended successfully")
-        logger.debug("[GeminiLive] All resources cleaned up")
 
     async def _receive_audio_loop(self):
         """Background task to receive audio responses from Gemini and forward to user."""

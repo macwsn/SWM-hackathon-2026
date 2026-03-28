@@ -149,7 +149,6 @@ export default function UserPanel() {
 
   useEffect(() => {
     const canvas = document.createElement('canvas')
-    let frameCount = 0
     const interval = setInterval(() => {
       const vid = videoRef.current
       const ws = processorWsRef.current
@@ -166,32 +165,16 @@ export default function UserPanel() {
       const ctx = canvas.getContext('2d')!
       ctx.drawImage(vid, 0, 0, targetW, targetH)
       const b64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1]
-      // Send frame without depth_mode so backend can use AUTO_DEPTH_MODE_WITH_GEMINI
-      // Backend will auto-detect indoor/outdoor if enabled in config
       ws.send(JSON.stringify({ type: 'frame', data: b64, depth_mode: 'outdoor' }))
 
-      // Also send frame to main user WebSocket if AI call is active
+      // Send frame to main user WebSocket if AI call is active
       if (aiCallState === 'active' && wsRef.current?.readyState === WebSocket.OPEN) {
-        frameCount++
-        if (frameCount % 10 === 1) {  // Log every 10th frame to reduce noise
-          console.log('[UserPanel] 📹 Sending frame #' + frameCount + ' to AI (size:', b64.length, 'bytes)')
-        }
         wsRef.current.send(JSON.stringify({ type: 'frame', data: b64 }))
-      } else if (aiCallState === 'active') {
-        console.log('[UserPanel] ⚠️ AI call active but WebSocket not ready. State:', wsRef.current?.readyState, ', OPEN=', WebSocket.OPEN)
-      } else if (frameCount > 0) {
-        console.log('[UserPanel] ℹ️ AI call ended, sent', frameCount, 'frames total')
-        frameCount = 0
       }
 
       waitingRef.current = true
     }, CAPTURE_INTERVAL_MS)
-    return () => {
-      clearInterval(interval)
-      if (frameCount > 0) {
-        console.log('[UserPanel] 🛑 Interval cleared, sent', frameCount, 'frames total')
-      }
-    }
+    return () => clearInterval(interval)
   }, [aiCallState, wsRef])
 
   const handleDescribe = () => {
