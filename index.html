@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Depth Anything V2 - Metric Depth</title>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <style>
+        body { 
+            background-color: #111111; color: white; 
+            font-family: sans-serif; text-align: center; 
+            margin: 0; padding: 10px;
+        }
+        h2 { font-size: 18px; margin-bottom: 5px; }
+        .status { color: #ccc; font-size: 14px; margin-bottom: 10px; }
+        
+        #cameraSelect {
+            margin-bottom: 15px; padding: 8px; background: #222; 
+            color: white; border-radius: 5px; border: 1px solid #555; 
+            width: 100%; max-width: 518px; font-size: 14px;
+        }
+
+        .container { 
+            display: flex; flex-direction: column; 
+            align-items: center; gap: 15px; 
+        }
+        @media (min-width: 768px) {
+            .container { flex-direction: row; justify-content: center; }
+        }
+
+        .view-box { text-align: left; width: 100%; max-width: 518px; }
+        .view-title { font-size: 14px; margin-bottom: 5px; text-align: center; }
+        
+        canvas { 
+            width: 100%; height: auto; 
+            border: 1px solid #444; background-color: #000;
+        }
+
+        #videoElement { display: none; } /* Ukrywamy surowe wideo */
+
+        .info-panel { 
+            background: rgba(0,0,0,0.6); padding: 10px; 
+            border-radius: 8px; margin-top: 15px; 
+            display: inline-block; text-align: left; 
+            font-family: monospace; border: 1px solid #333;
+            font-size: 14px; line-height: 1.5; width: 100%; max-width: 518px; box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Depth Anything V2 (Metry)</h2>
+    <div id="status" class="status">1. Ładowanie silnika ONNX i modelu...</div>
+    
+    <select id="cameraSelect">
+        <option value="">Ładowanie kamer...</option>
+    </select>
+
+    <div class="container">
+        <div class="view-box">
+            <div class="view-title">Kamera (Wybierz bez rybiego oka)</div>
+            <video id="videoElement" autoplay playsinline muted></video>
+            <canvas id="canvasOrig"></canvas>
+        </div>
+        
+        <div class="view-box">
+            <div class="view-title">Wizualizacja Głębi</div>
+            <canvas id="canvasDepth"></canvas>
+        </div>
+    </div>
+
+    <div id="infoPanel" class="info-panel">Czekam na pierwszą klatkę...</div>
+
+    <canvas id="canvasWork" width="252" height="252" style="display:none;"></canvas>
+
+    <script>
+        const video = document.getElementById('videoElement');
+        const canvasOrig = document.getElementById('canvasOrig');
+        const ctxOrig = canvasOrig.getContext('2d', { willReadFrequently: true });
+        
+        const canvasDepth = document.getElementById('canvasDepth');
+        const ctxDepth = canvasDepth.getContext('2d');
+        
+        const canvasWork = document.getElementById('canvasWork');
+        const ctxWork = canvasWork.getContext('2d', { willReadFrequently: true });
+
+        const statusDiv = document.getElementById('status');
+        const infoPanel = document.getElementById('infoPanel');
+        const cameraSelect = document.getElementById('cameraSelect');
+
+        let session = null;
+        let lastCaptureTime = 0;
+        const CAPTURE_EVERY_MS = 1000; // Inferencja co 1 sekundę
+        let frameCount = 0;
+
+        // Mniejsza rozdzielczość = gigantyczny skok wydajności
+        const MODEL_WIDTH = 252;
+        const MODEL_HEIGHT = 252;
+
+        const mean = [0.485, 0.456, 0.406];
+        const std  = [0.229, 0.224, 0.225];
+
+        // Funkcja do uruchamiania konkretnej kamery po jej ID
+        async function startCamera(deviceId = null) {
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+
+            const constraints = {
+                video: deviceId 
+                    ? { deviceId: { exact: deviceId }, width: { ideal: 640 } } 
+                    : { facingMode: 'environment', width: { ideal: 640 } }
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    video.play();
+                    // Dopasowujemy proporcje płócien do wybranej kamery
+                    canvasOrig.width = video.videoWidth;
+                    canvasOrig.height = video.videoHeight;
+                    canvasDepth.width = video.videoWidth;
+                    canvasDepth.height = video.videoHeight;
+                    resolve();
+                };
+            });
+        }
+
+        async function init() {
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("Brak dostępu do kamery. Wymagany bezpieczny protokół HTTPS.");
+                }
+
+                ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 4, 4);
+
+                // Ładowanie modelu zoptymalizowanego (Float16 dla mniejszej wagi)
+                // UWAGA: Upewnij się, że nazwa pliku zgadza się z tym, co masz na dysku!
+                session = await ort.InferenceSession.create('./depth_anything_v2_fp16.onnx', {
+                    executionProviders: ['webgpu', 'webgl', 'wasm'] 
+                });
+                
+                statusDiv.innerText = '2. Model załadowany. Uruchamiam aparat...';
+
+                // 1. Odpalamy domyślną kamerę, aby przeglądarka odblokowała nazwy urządzeń
+                await startCamera();
+
+                // 2. Pobieramy listę wszystkich kamer w telefonie
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+                // 3. Wypełniamy rozwijane menu
+                cameraSelect.innerHTML = '';
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Kamera ${index + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+
+                // 4. Obsługa zmiany kamery z listy
+                cameraSelect.onchange = async () => {
+                    statusDiv.innerText = `Przełączanie kamery...`;
+                    await startCamera(cameraSelect.value);
+                    statusDiv.innerText = `Kamera aktywna. Zaczynam inferencję...`;
+                };
+
+                statusDiv.innerText = `Kamera aktywna. Zaczynam inferencję...`;
+                requestAnimationFrame(processFrame);
+
+            } catch (err) {
+                statusDiv.innerHTML = `<span style="color: #ff4444; font-weight: bold;">Błąd: ${err.message}</span>`;
+                console.error(err);
+            }
+        }
+
+        async function processFrame(now) {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                ctxOrig.drawImage(video, 0, 0, canvasOrig.width, canvasOrig.height);
+            }
+
+            if (now - lastCaptureTime >= CAPTURE_EVERY_MS && session) {
+                lastCaptureTime = now;
+                const t0 = performance.now();
+
+                try {
+                    // Skalujemy klatkę w dół do wymiarów modelu
+                    ctxWork.drawImage(video, 0, 0, MODEL_WIDTH, MODEL_HEIGHT);
+                    const imageData = ctxWork.getImageData(0, 0, MODEL_WIDTH, MODEL_HEIGHT).data;
+
+                    const floatData = new Float32Array(3 * MODEL_HEIGHT * MODEL_WIDTH);
+
+                    for (let i = 0; i < MODEL_HEIGHT * MODEL_WIDTH; i++) {
+                        const r = imageData[i * 4] / 255.0;
+                        const g = imageData[i * 4 + 1] / 255.0;
+                        const b = imageData[i * 4 + 2] / 255.0;
+
+                        floatData[i] = (r - mean[0]) / std[0];
+                        floatData[MODEL_HEIGHT * MODEL_WIDTH + i] = (g - mean[1]) / std[1];
+                        floatData[2 * MODEL_HEIGHT * MODEL_WIDTH + i] = (b - mean[2]) / std[2];
+                    }
+
+                    const tensor = new ort.Tensor('float32', floatData, [1, 3, MODEL_HEIGHT, MODEL_WIDTH]);
+
+                    // Dynamiczne pobieranie nazw, żeby uniknąć błędów PyTorcha
+                    const inputName = session.inputNames[0];
+                    const outputName = session.outputNames[0];
+                    
+                    const feeds = {};
+                    feeds[inputName] = tensor;
+
+                    const results = await session.run(feeds);
+                    const outputData = results[outputName].data; 
+
+                    const elapsed = (performance.now() - t0) / 1000;
+
+                    let dMin = Infinity;
+                    let dMax = -Infinity;
+                    let sum = 0;
+
+                    for (let i = 0; i < outputData.length; i++) {
+                        const val = outputData[i];
+                        if (val < dMin) dMin = val;
+                        if (val > dMax) dMax = val;
+                        sum += val;
+                    }
+                    const dAvg = sum / outputData.length;
+
+                    infoPanel.innerText = 
+                        `min: ${dMin.toFixed(2)}m\n` +
+                        `max: ${dMax.toFixed(2)}m\n` +
+                        `avg: ${dAvg.toFixed(2)}m\n` +
+                        `inference: ${elapsed.toFixed(2)}s\n` +
+                        `klatka: #${frameCount}`;
+
+                    const depthImageData = new ImageData(MODEL_WIDTH, MODEL_HEIGHT);
+                    
+                    for (let i = 0; i < outputData.length; i++) {
+                        const val = outputData[i];
+                        let gray = 255 - ((val - dMin) / (dMax - dMin)) * 255;
+                        gray = Math.max(0, Math.min(255, gray));
+
+                        const pixelIndex = i * 4;
+                        depthImageData.data[pixelIndex] = gray;     
+                        depthImageData.data[pixelIndex + 1] = gray; 
+                        depthImageData.data[pixelIndex + 2] = gray; 
+                        depthImageData.data[pixelIndex + 3] = 255;  
+                    }
+
+                    // Rysujemy miniaturową głębię...
+                    ctxWork.putImageData(depthImageData, 0, 0);
+                    // ...i automatycznie rozciągamy na pełny ekran!
+                    ctxDepth.drawImage(canvasWork, 0, 0, canvasDepth.width, canvasDepth.height);
+
+                    frameCount++;
+                } catch (err) {
+                    infoPanel.innerText = `Błąd inferencji: ${err.message}`;
+                    console.error("Błąd podczas inferencji:", err);
+                }
+            }
+
+            requestAnimationFrame(processFrame);
+        }
+
+        // Start!
+        init();
+    </script>
+</body>
+</html>
