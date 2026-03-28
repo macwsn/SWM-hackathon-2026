@@ -16,6 +16,15 @@ USE_MOCK_SMELTER: bool = os.getenv("USE_MOCK_SMELTER", "true").lower() == "true"
 USE_MOCK_LOCATION: bool = os.getenv("USE_MOCK_LOCATION", "true").lower() == "true"
 USE_MOCK_DEPTH: bool = os.getenv("USE_MOCK_DEPTH", "false").lower() == "true"
 
+# Auto-switch depth mode using periodic Gemini indoor/outdoor detection.
+AUTO_DEPTH_MODE_WITH_GEMINI: bool = os.getenv(
+    "AUTO_DEPTH_MODE_WITH_GEMINI", "true"
+).lower() == "true"
+AUTO_DEPTH_MODE_INTERVAL_SECONDS: float = float(
+    os.getenv("AUTO_DEPTH_MODE_INTERVAL_SECONDS", "180")
+)
+AUTO_DEPTH_MODE_DEFAULT: str = os.getenv("AUTO_DEPTH_MODE_DEFAULT", "unknown")
+
 # ──────────────────────────────────────────────────────────────
 # CORS Configuration
 # ──────────────────────────────────────────────────────────────
