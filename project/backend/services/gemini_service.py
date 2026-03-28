@@ -70,8 +70,8 @@ class GeminiService:
             prompt = (
                 f"Jesteś asystentem dla osoby niewidomej. "
                 f"Lokalizacja GPS: {lat:.5f}, {lon:.5f}. "
-                "Opisz krótko co widzisz na obrazie, skupiając się na przeszkodach "
-                "i ważnych elementach otoczenia. Odpowiedz po polsku, maksymalnie 2 zdania."
+                "Opisz krótko co widzisz na obrazie, jesli widzisz przeszkody to opisz je "
+                "i ważnych elementach otoczenia. Odpowiedz po angielsku, maksymalnie 2 zdania."
             )
             return await self._call(image_bytes, prompt)
         except Exception as exc:
