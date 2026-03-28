@@ -216,10 +216,10 @@ export default function UserPanel() {
       {/* Incoming call banner */}
       {callState === 'incoming' && (
         <div className="flex-shrink-0 bg-brutal-yellow border-y-4 border-black p-4 flex flex-col gap-3 animate-pulse">
-          <p className="font-black uppercase text-black text-2xl text-center">📞 OPIEKUN DZWONI!</p>
+          <p className="font-black uppercase text-black text-2xl text-center">📞 CAREGIVER CALLING!</p>
           <div className="flex gap-3">
-            <button onClick={() => handleCallToggle()} className="flex-1 btn-brutal bg-brutal-green text-black font-black text-xl py-4 uppercase">ODBIERZ</button>
-            <button onClick={hangUp} className="flex-1 btn-brutal bg-brutal-red text-white font-black text-xl py-4 uppercase">ODRZUĆ</button>
+            <button onClick={() => handleCallToggle()} className="flex-1 btn-brutal bg-brutal-green text-black font-black text-xl py-4 uppercase">ANSWER</button>
+            <button onClick={hangUp} className="flex-1 btn-brutal bg-brutal-red text-white font-black text-xl py-4 uppercase">REJECT</button>
           </div>
         </div>
       )}
@@ -234,7 +234,7 @@ export default function UserPanel() {
                      flex flex-col items-center justify-center gap-1"
         >
           <span className="text-2xl">{isDescribing ? '⏳' : '🔍'}</span>
-          {isDescribing ? 'OPISUJĘ…' : 'OPISZ'}
+          {isDescribing ? 'DESCRIBING…' : 'DESCRIBE'}
         </button>
 
         <button
@@ -251,14 +251,14 @@ export default function UserPanel() {
           <span className="text-2xl">
             {callState === 'in-call' ? '📞' : callState === 'calling' ? '📞' : callState === 'incoming' ? '📞' : '🆘'}
           </span>
-          {callState === 'in-call' ? 'ROZŁĄCZ' : callState === 'calling' ? 'DZWONI…' : callState === 'incoming' ? 'ODBIERZ' : 'POMOC'}
+          {callState === 'in-call' ? 'HANG UP' : callState === 'calling' ? 'CALLING…' : callState === 'incoming' ? 'ANSWER' : 'HELP'}
         </button>
       </div>
 
       {/* Footer nav */}
       <div className="flex-shrink-0 bg-black border-t-4 border-brutal-green px-4 py-2 flex items-center justify-between">
         <a href="/" className="text-brutal-green font-bold text-xs uppercase underline">← MENU</a>
-        <span className="text-brutal-green/50 text-xs font-bold">BLIND ASSIST v1.0</span>
+        <span className="text-brutal-green/50 text-xs font-bold">AISIGHT v1.0</span>
       </div>
     </div>
   )
@@ -267,9 +267,9 @@ export default function UserPanel() {
 function CallIndicator({ callState }: { callState: string }) {
   if (callState === 'idle') return null
   const labels: Record<string, string> = {
-    calling: 'DZWONIENIE…',
-    incoming: 'POŁĄCZENIE!',
-    'in-call': '● W ROZMOWIE',
+    calling: 'CALLING…',
+    incoming: 'INCOMING CALL!',
+    'in-call': '● IN CALL',
   }
   return (
     <span className="bg-black text-brutal-green px-2 py-0.5 text-xs font-black border-2 border-brutal-green animate-pulse">

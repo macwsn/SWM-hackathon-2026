@@ -98,14 +98,14 @@ export default function MultiAssistantPanel() {
   return (
     <div className="h-screen bg-brutal-darker flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-brutal-pink border-b-4 border-black px-4 py-2 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">📡</span>
-          <h1 className="text-black font-black uppercase text-lg">MULTI ASSISTANT</h1>
+      <div className="bg-[#FF66CC] border-b-4 border-black px-4 py-2 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">📡</span>
+            <h1 className="text-black font-black uppercase text-lg">MULTI ASSISTANT</h1>
         </div>
         <div className="flex items-center gap-3">
-          <span className="tag-brutal bg-brutal-blue text-white flex items-center gap-1">
-            <span className="text-sm">👥</span> {userIds.length} KAMER
+          <span className="tag-brutal bg-[#0066FF] text-white flex items-center gap-1">
+            <span className="text-sm">👥</span> {userIds.length} CAMERAS
           </span>
           <span className={`tag-brutal ${isConnected ? 'bg-brutal-green text-black' : 'bg-brutal-red text-white'}`}>
             <span className="inline-flex items-center gap-1">
@@ -122,16 +122,16 @@ export default function MultiAssistantPanel() {
         <div key={uid} className="flex-shrink-0 bg-brutal-yellow border-b-4 border-black p-3 flex items-center justify-between animate-slide-up">
           <div className="flex items-center gap-3">
             <span className="text-2xl animate-pulse">📞</span>
-            <p className="font-black uppercase text-black text-lg">{uid.toUpperCase()} DZWONI!</p>
+            <p className="font-black uppercase text-black text-lg">{uid.toUpperCase()} IS CALLING!</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => handleAcceptCall(uid)}
               className="btn-brutal bg-brutal-green text-black font-black text-sm py-2 px-4 uppercase">
-              ODBIERZ
+              ANSWER
             </button>
             <button onClick={() => handleRejectCall(uid)}
               className="btn-brutal bg-brutal-red text-white font-black text-sm py-2 px-4 uppercase">
-              ODRZUĆ
+              REJECT
             </button>
           </div>
         </div>
@@ -146,10 +146,10 @@ export default function MultiAssistantPanel() {
                 <span className="text-brutal-yellow text-3xl animate-none">📡</span>
               </div>
               <span className="text-brutal-yellow font-black uppercase animate-pulse text-xl">
-                Oczekiwanie na kamery użytkowników...
+                Waiting for user cameras...
               </span>
               <span className="text-brutal-yellow/50 font-bold text-xs uppercase">
-                Użytkownicy powinni połączyć się przez /user/ID
+                Users should connect via /user/ID
               </span>
             </div>
           )}
@@ -165,7 +165,7 @@ export default function MultiAssistantPanel() {
                 <div className="w-full h-full flex items-center justify-center bg-grid-light">
                   <div className="text-center">
                     <span className="text-3xl block mb-1">📷</span>
-                    <span className="text-gray-500 text-xs font-bold">Brak klatek</span>
+                    <span className="text-gray-500 text-xs font-bold">No frames</span>
                   </div>
                 </div>
               )}
@@ -193,7 +193,7 @@ export default function MultiAssistantPanel() {
                       ? 'bg-brutal-yellow text-black animate-pulse'
                       : 'bg-brutal-blue text-white hover:bg-brutal-pink'}`}
                 >
-                  📞 {callingUsers.has(uid) ? 'DZWONIĘ…' : 'ZADZWOŃ'}
+                  📞 {callingUsers.has(uid) ? 'CALLING…' : 'CALL'}
                 </button>
               </div>
 
@@ -209,7 +209,7 @@ export default function MultiAssistantPanel() {
       {/* Footer */}
       <div className="flex-shrink-0 bg-black border-t-4 border-brutal-pink px-4 py-1 flex items-center justify-between">
         <a href="/" className="text-brutal-pink font-bold text-xs uppercase underline">← MENU</a>
-        <span className="text-brutal-pink/50 text-xs font-bold">BLIND ASSIST — MULTI ASSISTANT</span>
+        <span className="text-brutal-pink/50 text-xs font-bold">AISIGHT — MULTI ASSISTANT</span>
       </div>
     </div>
   )

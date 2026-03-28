@@ -27,7 +27,7 @@ const PerformanceCharts: React.FC<PerformanceChartsProps> = ({ metrics }) => {
             <Stat label="DEPTH MS" value={`${last.depth_ms.toFixed(0)}`} color="bg-brutal-blue text-white" />
             <Stat label="FPS" value={`${last.fps.toFixed(1)}`} color="bg-brutal-green text-black" />
             <Stat label="FRAMES" value={`${last.frame_count}`} color="bg-brutal-yellow text-black" />
-            <Stat label={last.is_indoor ? 'WNĘTRZE' : 'ZEWNĄTRZ'} value={`${last.min_distance.toFixed(1)}m`} color="bg-brutal-red text-white" />
+            <Stat label={last.is_indoor ? 'INDOOR' : 'OUTDOOR'} value={`${last.min_distance.toFixed(1)}m`} color="bg-brutal-red text-white" />
           </>
         )}
       </div>
