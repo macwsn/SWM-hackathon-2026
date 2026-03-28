@@ -123,7 +123,7 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
         <div className="flex items-center gap-2">
           <div className={`status-dot ${isConnected ? 'bg-black text-black' : 'bg-white text-white'}`} />
           <span className="font-black uppercase text-black text-sm">
-            {userId.toUpperCase()} — {isConnected ? 'POŁĄCZONO' : 'BRAK POŁĄCZENIA'}
+            {userId.toUpperCase()} — {isConnected ? 'CONNECTED' : 'NO CONNECTION'}
           </span>
         </div>
         {minDist !== null && (
@@ -148,7 +148,7 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
                 <span className="text-4xl">👁️</span>
               </div>
             </div>
-            <span className="text-brutal-green font-black uppercase mt-6 text-lg tracking-wider">Kamera Aktywna</span>
+            <span className="text-brutal-green font-black uppercase mt-6 text-lg tracking-wider">Camera Active</span>
             {minDist !== null && (
               <span className={`font-black text-2xl mt-1 ${minDist < 1.0 ? 'text-brutal-red' : minDist < 2.0 ? 'text-brutal-yellow' : 'text-brutal-green'}`}>
                 {minDist.toFixed(1)}m
@@ -160,7 +160,7 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
             <div className="w-20 h-20 border-4 border-brutal-red rounded-full flex items-center justify-center">
               <span className="text-brutal-red text-4xl animate-blink">!</span>
             </div>
-            <span className="text-brutal-red font-black uppercase animate-pulse text-lg">Łączenie...</span>
+            <span className="text-brutal-red font-black uppercase animate-pulse text-lg">Connecting...</span>
           </div>
         )}
       </div>
@@ -176,14 +176,14 @@ export default function MultiUserPanel({ userId }: { userId: string }) {
             ${callState === 'calling' ? 'bg-brutal-yellow text-black' : 'bg-brutal-red text-white'}`}
         >
           <span className="text-2xl">{callState === 'calling' ? '📞' : '🆘'}</span>
-          {callState === 'calling' ? 'DZWONI…' : 'POMOC'}
+          {callState === 'calling' ? 'CALLING…' : 'HELP'}
         </button>
       </div>
 
       {/* Footer */}
       <div className="flex-shrink-0 bg-black border-t-4 border-brutal-green px-4 py-2 flex items-center justify-between">
         <a href="/" className="text-brutal-green font-bold text-xs uppercase underline">← MENU</a>
-        <span className="text-brutal-green/50 text-xs font-bold">BLIND ASSIST — {userId.toUpperCase()}</span>
+        <span className="text-brutal-green/50 text-xs font-bold">AISIGHT — {userId.toUpperCase()}</span>
       </div>
     </div>
   )

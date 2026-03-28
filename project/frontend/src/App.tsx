@@ -48,7 +48,7 @@ function FloatingShape({ color, size, top, left, delay, shape }: {
    Ticker strip component
    ────────────────────────────────────────── */
 function Ticker() {
-  const text = 'BLIND ASSIST \u2588 SWM HACKATHON 2026 \u2588 REAL-TIME OBSTACLE DETECTION \u2588 DEPTH ANALYSIS \u2588 SPATIAL AUDIO \u2588 VOICE ASSISTANCE \u2588 AI-POWERED NAVIGATION \u2588 '
+  const text = 'AISIGHT \u2588 SWM HACKATHON 2026 \u2588 REAL-TIME OBSTACLE DETECTION \u2588 DEPTH ANALYSIS \u2588 SPATIAL AUDIO \u2588 VOICE ASSISTANCE \u2588 AI-POWERED NAVIGATION \u2588 '
   return (
     <div className="bg-black border-y-4 border-brutal-yellow overflow-hidden py-1">
       <div className="animate-marquee whitespace-nowrap inline-block">
@@ -93,19 +93,17 @@ function Home() {
             </div>
           </div>
 
-          <h1 className="text-6xl md:text-7xl font-black uppercase animate-glitch tracking-tight">
-            BLIND
+          <h1 className="text-6xl md:text-8xl font-black uppercase animate-glitch tracking-tighter">
+            AISIGHT
           </h1>
-          <h1 className="text-6xl md:text-7xl font-black uppercase tracking-tight -mt-2">
-            ASSIST
-          </h1>
+          <div className="h-2 w-full bg-brutal-yellow border-4 border-black mt-2 shadow-brutal" />
           <div className="mt-2 inline-block bg-black px-4 py-1">
             <span className="text-brutal-yellow font-black text-sm tracking-[0.3em]">SWM HACKATHON 2026</span>
           </div>
         </div>
 
         {/* Navigation card */}
-        <div className="card-brutal p-6 max-w-sm w-full bg-brutal-dark relative corner-brackets">
+        <div className="card-brutal p-6 max-w-sm w-full bg-[#1a1a2e] relative corner-brackets">
           {/* Decorative top bar */}
           <div className="absolute -top-3 left-6 right-6 h-3 bg-brutal-yellow border-x-4 border-t-4 border-black" />
 

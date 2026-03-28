@@ -19,7 +19,7 @@
            active:shadow-none active:translate-x-1 active:translate-y-1;
   }
   .card-brutal {
-    @apply border-4 border-black shadow-brutal bg-white;
+    @apply border-4 border-black shadow-brutal;
   }
   .tag-brutal {
     @apply border-2 border-black font-bold uppercase text-xs px-2 py-0.5;
