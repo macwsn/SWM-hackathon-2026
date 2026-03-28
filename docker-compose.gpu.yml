@@ -1,0 +1,27 @@
+# GPU Override Configuration
+# Use this on Linux with NVIDIA GPU support
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+#
+# Requirements:
+#   - Linux host (Ubuntu/Debian recommended)
+#   - NVIDIA GPU with drivers installed
+#   - nvidia-container-toolkit installed
+#
+# Installation guide: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+
+services:
+  depth-worker-a:
+    deploy:
+      replicas: 2  # Scale to 2 workers for load balancing
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - MODEL_DEVICE=cuda  # Override to use GPU
+      - WORKER_ID=${HOSTNAME}  # Use hostname for unique worker IDs
+

@@ -36,3 +36,11 @@ export interface GeminiDescription {
   response_ms: number
   timestamp: number
 }
+
+export interface ObstaclePing {
+  type: 'obstacle_ping'
+  distance: number
+  direction: 'left' | 'center' | 'right'
+  severity: 'INFO' | 'WARNING' | 'CRITICAL'
+  timestamp: number
+}

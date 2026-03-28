@@ -9,7 +9,8 @@ export function useWebSocket<T = unknown>(url: string) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
+    const prev = wsRef.current
+    if (prev?.readyState === WebSocket.OPEN || prev?.readyState === WebSocket.CONNECTING) return
 
     const ws = new WebSocket(url)
     wsRef.current = ws

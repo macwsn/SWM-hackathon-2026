@@ -32,10 +32,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from routers.websocket_manager import manager
 from services.depth_model import depth_model_service
 from services.obstacle_detector import obstacle_detector
-from services.tts_service import tts_service
 
 router = APIRouter(tags=["websocket"])
 logger = logging.getLogger(__name__)
+
+# Global variable to hold the latest frame from the phone for Gemini descriptions
+latest_frame = None
 
 
 active_processor_ws = None
@@ -52,98 +54,87 @@ async def processor_websocket(ws: WebSocket):
 
     try:
         while True:
-            data = await ws.receive_json()
-            if active_processor_ws != ws:
-                # This connection has been superseded by a newer one
-                break
+            try:
+                data = await ws.receive_json()
+                if data.get("type") != "frame":
+                    continue
 
-            if data.get("type") != "frame":
-                continue
+                t0 = time.perf_counter()
+                is_indoor = data.get("depth_mode", "outdoor") == "indoor"
 
-            t0 = time.perf_counter()
-            is_indoor = data.get("depth_mode", "outdoor") == "indoor"
+                # Decode base64 JPEG → RGB numpy
+                b64_str = data["data"]
+                b64_str += "=" * ((4 - len(b64_str) % 4) % 4) # Fix padding
+                raw = base64.b64decode(b64_str)
+                arr = np.frombuffer(raw, dtype=np.uint8)
+                frame_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if frame_bgr is None:
+                    continue
+                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                
+                # Store latest frame globally for user_ws.py
+                global latest_frame
+                latest_frame = frame_rgb
 
-            # Decode base64 JPEG → RGB numpy
-            raw_b64 = data["data"]
-            raw = base64.b64decode(raw_b64)
-            arr = np.frombuffer(raw, dtype=np.uint8)
-            frame_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-            if frame_bgr is None:
-                continue
-            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                await manager.broadcast("caregiver", {"type": "frame", "data": b64_str})
+                await manager.broadcast("stats", {"type": "frame", "data": b64_str})
 
-            # Broadcast frame to caregivers and stats panel
-            frame_payload = {
-                "type": "frame",
-                "data": raw_b64
-            }
-            await manager.broadcast("caregiver", frame_payload)
-            await manager.broadcast("stats", frame_payload)
+                # Depth inference (thread pool — CPU-bound)
+                depth_map, inference_ms = await loop.run_in_executor(
+                    None,
+                    lambda f=frame_rgb, i=is_indoor: depth_model_service.predict_depth(f, i),
+                )
 
-            # All heavy processing (inference, detector, visualization) should be in the executor
-            # to avoid blocking the event loop.
-            def heavy_depth_tasks(f, indoor):
-                d_map, inf_ms = depth_model_service.predict_depth(f, indoor)
-                # Obstacle detection
-                obs, m_dist = obstacle_detector.detect(d_map, indoor)
-                # Visualization (Base64 is expensive, do it here)
-                d_b64 = depth_model_service.depth_to_visualization_b64(d_map)
-                return d_map, inf_ms, obs, m_dist, d_b64
+                # Obstacle detection + alerts
+                obstacle, min_dist, direction, severity = obstacle_detector.detect(depth_map, is_indoor)
+                if obstacle and obstacle_detector.should_alert():
+                    await manager.broadcast("user", {
+                        "type": "obstacle_ping",
+                        "distance": round(min_dist, 2),
+                        "direction": direction,
+                        "severity": severity,
+                        "timestamp": time.time(),
+                    })
+                    alert_text = obstacle_detector.format_alert(min_dist, is_indoor, direction, severity)
+                    alert_payload = {
+                        "type": "alert",
+                        "text": alert_text,
+                        "distance": round(min_dist, 2),
+                        "direction": direction,
+                        "severity": severity,
+                        "is_indoor": is_indoor,
+                        "timestamp": time.time(),
+                    }
+                    await manager.broadcast("caregiver", alert_payload)
 
-            depth_map, inference_ms, obstacle, min_dist, depth_b64 = await loop.run_in_executor(
-                None, heavy_depth_tasks, frame_rgb, is_indoor
-            )
-
-            if obstacle and obstacle_detector.should_alert():
-                alert_text = obstacle_detector.format_alert(min_dist, is_indoor)
-                audio_b64 = await tts_service.synthesize_b64(alert_text)
-                await manager.broadcast("user", {
-                    "type": "tts_audio", "data": audio_b64, "text": alert_text,
-                })
-                alert_payload = {
-                    "type": "alert",
-                    "text": alert_text,
-                    "distance": round(min_dist, 2),
+                # Send depth visualisation back to this client
+                depth_b64 = depth_model_service.depth_to_visualization_b64(depth_map)
+                total_ms = round((time.perf_counter() - t0) * 1000, 1)
+                analysis_payload = {
+                    "type": "analysis",
+                    "depth_frame": depth_b64,
+                    "min_distance": round(min_dist, 2),
+                    "inference_ms": round(inference_ms, 1),
                     "is_indoor": is_indoor,
-                    "timestamp": time.time(),
+                    "total_ms": total_ms,
                 }
-                await manager.broadcast("caregiver", alert_payload)
-            
-            total_ms = round((time.perf_counter() - t0) * 1000, 1)
-            
-            # User only needs the distance and metadata (since visual is hidden anyway)
-            analysis_lite = {
-                "type": "analysis",
-                "min_distance": round(min_dist, 2),
-                "inference_ms": round(inference_ms, 1),
-                "is_indoor": is_indoor,
-                "total_ms": total_ms,
-            }
-            # Stats needs the full frame
-            analysis_full = {
-                **analysis_lite,
-                "depth_frame": depth_b64,
-            }
-            
-            await ws.send_json(analysis_lite)
-            await manager.broadcast("stats", analysis_full)
+                await ws.send_json(analysis_payload)
+                await manager.broadcast("stats", analysis_payload)
 
-            # Forward metrics to stats panel
-            await manager.broadcast("stats", {
-                "type": "metrics",
-                "depth_ms": round(inference_ms, 1),
-                "fps": round(1000 / max(total_ms, 1), 1),
-                "frame_count": 0,
-                "is_indoor": is_indoor,
-                "min_distance": round(min_dist, 2),
-                "timestamp": time.time(),
-            })
+                # Forward metrics to stats panel
+                await manager.broadcast("stats", {
+                    "type": "metrics",
+                    "depth_ms": round(inference_ms, 1),
+                    "fps": round(1000 / max(total_ms, 1), 1),
+                    "frame_count": 0,
+                    "is_indoor": is_indoor,
+                    "min_distance": round(min_dist, 2),
+                    "timestamp": time.time(),
+                })
+            except WebSocketDisconnect:
+                raise
+            except Exception as e:
+                logger.error(f"[Processor loop] error: {e}")
 
     except WebSocketDisconnect:
         logger.info("[Processor] client disconnected")
-    except Exception as exc:
-        logger.error(f"[Processor] error: {exc}")
-    finally:
-        if active_processor_ws == ws:
-            active_processor_ws = None
-        await ws.close()

@@ -20,9 +20,9 @@ class ObstacleDetector:
 
     def detect(
         self, depth_map: np.ndarray, is_indoor: bool = False
-    ) -> tuple[bool, float]:
+    ) -> tuple[bool, float, str, str]:
         """
-        Returns (obstacle_detected, closest_distance_m).
+        Returns (obstacle_detected, closest_distance_m, direction, severity).
 
         Analyses centre 60% width × bottom 90% height of the depth map
         (the region most relevant to a forward-facing pedestrian camera).
@@ -33,8 +33,21 @@ class ObstacleDetector:
         region = depth_map[mh:, mw : w - mw]
 
         min_dist = float(np.percentile(region, 5))
+
+        thirds = np.array_split(region, 3, axis=1)
+        third_dists = [float(np.percentile(part, 5)) for part in thirds]
+        direction = ("left", "center", "right")[int(np.argmin(third_dists))]
+
         threshold = OBSTACLE_THRESHOLD_INDOOR if is_indoor else OBSTACLE_THRESHOLD_OUTDOOR
-        return min_dist < threshold, min_dist
+        obstacle = min_dist < threshold
+        if not obstacle:
+            severity = "INFO"
+        elif min_dist <= threshold * 0.6:
+            severity = "CRITICAL"
+        else:
+            severity = "WARNING"
+
+        return obstacle, min_dist, direction, severity
 
     def should_alert(self) -> bool:
         now = time.time()
@@ -44,9 +57,22 @@ class ObstacleDetector:
         return False
 
     @staticmethod
-    def format_alert(min_dist: float, is_indoor: bool) -> str:
+    def format_alert(min_dist: float, is_indoor: bool, direction: str, severity: str) -> str:
         env = "wewnątrz" if is_indoor else "na zewnątrz"
-        return f"UWAGA! Przeszkoda w odległości {min_dist:.1f} metrów. Jesteś {env}."
+        direction_pl = {
+            "left": "po lewej",
+            "center": "na wprost",
+            "right": "po prawej",
+        }.get(direction, "na wprost")
+        severity_pl = {
+            "CRITICAL": "PILNE",
+            "WARNING": "UWAGA",
+            "INFO": "INFO",
+        }.get(severity, "UWAGA")
+        return (
+            f"{severity_pl}! Przeszkoda {direction_pl}, odległość {min_dist:.1f} m. "
+            f"Jesteś {env}."
+        )
 
 
 obstacle_detector = ObstacleDetector()

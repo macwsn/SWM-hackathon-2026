@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useWebRTC } from '../hooks/useWebRTC'
+import { useSpatialPing } from '../hooks/useSpatialPing'
 import { useLocation } from '../hooks/useLocation'
 import { wsUrl } from '../lib/wsUrl'
-import type { DepthFrame } from '../types'
+import type { DepthFrame, ObstaclePing } from '../types'
 
 const CAPTURE_INTERVAL_MS = 150
 
@@ -11,7 +12,8 @@ type AlertOverlay = { text: string; id: number }
 
 export default function UserPanel() {
   const { lastMessage, status, send } = useWebSocket(wsUrl('/ws/user'))
-  const { callState, startCall, hangUp } = useWebRTC('user')
+  const { callState, requestCall, answerCall, hangUp } = useWebRTC('user')
+  const { isEnabled: pingEnabled, init: initPing, toggle: togglePing, playObstaclePing } = useSpatialPing()
   useLocation(send)
 
   const [overlay, setOverlay] = useState<AlertOverlay | null>(null)
@@ -24,27 +26,39 @@ export default function UserPanel() {
   const processorWsRef = useRef<WebSocket | null>(null)
   const waitingRef = useRef(false)
 
-  // Start camera
+  // Start local camera
   useEffect(() => {
-    let stream: MediaStream | null = null
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-      .then((s) => {
-        stream = s
-        if (videoRef.current) videoRef.current.srcObject = s
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+      .then(stream => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+        }
       })
-      .catch(() =>
-        navigator.mediaDevices
-          .getUserMedia({ video: true, audio: false })
-          .then((s) => { stream = s; if (videoRef.current) videoRef.current.srcObject = s })
-      )
-    return () => { stream?.getTracks().forEach((t) => t.stop()) }
+      .catch(err => console.error('Camera access failed:', err))
   }, [])
 
   // Play TTS audio and show overlay when alert arrives
   useEffect(() => {
     if (!lastMessage) return
-    const msg = lastMessage as { type: string; data?: string; text?: string }
+    const msg = lastMessage as { type: string; data?: string; text?: string; distance?: number; direction?: 'left' | 'center' | 'right'; severity?: 'INFO' | 'WARNING' | 'CRITICAL' }
+
+    if (msg.type === 'obstacle_ping' && msg.direction && msg.severity) {
+      const payload: ObstaclePing = {
+        type: 'obstacle_ping',
+        direction: msg.direction,
+        severity: msg.severity,
+        distance: msg.distance ?? 4.0,
+        timestamp: Date.now() / 1000,
+      }
+      void playObstaclePing(payload)
+
+      if (overlayTimer.current) clearTimeout(overlayTimer.current)
+      const dirLabel = payload.direction === 'left' ? 'PO LEWEJ' : payload.direction === 'right' ? 'PO PRAWEJ' : 'NA WPROST'
+      const sevLabel = payload.severity === 'CRITICAL' ? 'PILNE' : 'UWAGA'
+      setOverlay({ text: `${sevLabel}: ${dirLabel} ${payload.distance.toFixed(1)} m`, id: Date.now() })
+      overlayTimer.current = setTimeout(() => setOverlay(null), 2500)
+      return
+    }
 
     if (msg.type === 'tts_audio' && msg.data) {
       playAudio(msg.data)
@@ -129,13 +143,25 @@ export default function UserPanel() {
   }, [])
 
   const handleDescribe = () => {
+    void initPing()
     setIsDescribing(true)
     send({ type: 'describe_request' })
   }
 
   const handleCallToggle = () => {
-    if (callState === 'in-call' || callState === 'calling') hangUp()
-    else startCall()
+    void initPing()
+    if (callState === 'incoming') {
+      answerCall()
+    } else if (callState === 'in-call' || callState === 'calling') {
+      hangUp()
+    } else {
+      requestCall()
+    }
+  }
+
+  const handleTogglePing = () => {
+    void initPing()
+    togglePing()
   }
 
   const isConnected = status === 'open'
@@ -155,7 +181,15 @@ export default function UserPanel() {
         <span className="font-black uppercase text-black text-sm">
           {isConnected ? 'POŁĄCZONO' : 'BRAK POŁĄCZENIA'}
         </span>
-        <CallIndicator callState={callState} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleTogglePing}
+            className={`tag-brutal ${pingEnabled ? 'bg-brutal-yellow text-black' : 'bg-gray-200 text-black'}`}
+          >
+            {pingEnabled ? 'PING ON' : 'PING OFF'}
+          </button>
+          <CallIndicator callState={callState} />
+        </div>
       </div>
 
       {/* Hidden Video for frame capture */}
@@ -193,6 +227,17 @@ export default function UserPanel() {
         </div>
       )}
 
+      {/* Incoming call banner */}
+      {callState === 'incoming' && (
+        <div className="flex-shrink-0 bg-brutal-yellow border-y-4 border-black p-4 flex flex-col gap-3 animate-pulse">
+          <p className="font-black uppercase text-black text-2xl text-center">📞 OPIEKUN DZWONI!</p>
+          <div className="flex gap-3">
+            <button onClick={() => handleCallToggle()} className="flex-1 btn-brutal bg-brutal-green text-black font-black text-xl py-4 uppercase">ODBIERZ</button>
+            <button onClick={hangUp} className="flex-1 btn-brutal bg-brutal-red text-white font-black text-xl py-4 uppercase">ODRZUĆ</button>
+          </div>
+        </div>
+      )}
+
       {/* Buttons */}
       <div className="flex-shrink-0 flex gap-3 p-4">
         <button
@@ -209,12 +254,12 @@ export default function UserPanel() {
           disabled={!isConnected}
           className={`flex-1 h-20 btn-brutal text-lg font-black uppercase
             disabled:opacity-50 disabled:cursor-not-allowed
-            ${callState === 'in-call' || callState === 'calling'
+            ${callState === 'in-call' || callState === 'calling' || callState === 'incoming'
               ? 'bg-brutal-green text-black'
               : 'bg-brutal-red text-white'
             }`}
         >
-          {callState === 'in-call' ? '📞 ROZŁĄCZ' : callState === 'calling' ? '📞 DZWONI…' : '🆘 POMOC'}
+          {callState === 'in-call' ? '📞 ROZŁĄCZ' : callState === 'calling' ? '📞 DZWONI…' : callState === 'incoming' ? '📞 ODBIERZ' : '🆘 POMOC'}
         </button>
       </div>
 

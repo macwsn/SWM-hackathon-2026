@@ -1,0 +1,115 @@
+# ═══════════════════════════════════════════════════════════════
+# Blind Assistant - MVP Infrastructure (Data Layer Only)
+# ═══════════════════════════════════════════════════════════════
+# This is the minimal viable infrastructure setup.
+# Only includes Redis, PostgreSQL, and MinIO.
+# 
+# Usage:
+#   docker-compose -f docker-compose.mvp.yml up -d
+#   docker-compose -f docker-compose.mvp.yml down
+#
+# Test connections:
+#   Redis:    redis-cli -h localhost -p 6379 ping
+#   Postgres: psql -h localhost -U postgres -d blind_assistant
+#   MinIO:    http://localhost:9001 (admin/minioadmin)
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # DATA LAYER - Core Infrastructure
+  # ═══════════════════════════════════════════════════════════════
+  
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - backend-network
+      - inference-network
+      - data-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=blind_assistant
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - data-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - data-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+# ═══════════════════════════════════════════════════════════════
+# NETWORKS
+# ═══════════════════════════════════════════════════════════════
+networks:
+  frontend-network:
+    driver: bridge
+    name: blind-assistant-frontend
+
+  backend-network:
+    driver: bridge
+    name: blind-assistant-backend
+    internal: false
+
+  inference-network:
+    driver: bridge
+    name: blind-assistant-inference
+    internal: true
+
+  data-network:
+    driver: bridge
+    name: blind-assistant-data
+    internal: true
+
+# ═══════════════════════════════════════════════════════════════
+# VOLUMES
+# ═══════════════════════════════════════════════════════════════
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  minio-data:
+    driver: local
+  model-cache:
+    driver: local
+

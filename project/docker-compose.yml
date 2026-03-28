@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  fishjam:
+    image: ghcr.io/software-mansion/fishjam:latest
+    ports:
+      - "5002:5002"
+    environment:
+      - FISHJAM_MANAGEMENT_TOKEN=development
+      - FISHJAM_PORT=5002
+    # Add WHIP/WHEP ports if needed, but fishjam uses WebRTC ICE
+    network_mode: "host" 
+    restart: unless-stopped

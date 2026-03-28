@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes, Link } from 'react-router-dom'
 import UserPanel from './pages/UserPanel'
 import CaregiverPanel from './pages/CaregiverPanel'
 import StatsPanel from './pages/StatsPanel'
+import { FishjamProvider } from '@fishjam-cloud/react-client'
 
 function Home() {
   return (
@@ -27,13 +28,15 @@ function Home() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/user" element={<UserPanel />} />
-        <Route path="/caregiver" element={<CaregiverPanel />} />
-        <Route path="/stats" element={<StatsPanel />} />
-      </Routes>
-    </BrowserRouter>
+    <FishjamProvider fishjamId="self-hosted">
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/user" element={<UserPanel />} />
+          <Route path="/caregiver" element={<CaregiverPanel />} />
+          <Route path="/stats" element={<StatsPanel />} />
+        </Routes>
+      </BrowserRouter>
+    </FishjamProvider>
   )
 }

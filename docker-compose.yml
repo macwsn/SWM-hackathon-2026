@@ -1,0 +1,328 @@
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # FRONTEND - React SPA
+  # ═══════════════════════════════════════════════════════════════
+
+  frontend:
+    image: blind-assistant-frontend:v1
+    build:
+      context: ./project/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - frontend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════
+  # BACKEND - FastAPI Monolith (transitioning to microservices)
+  # ═══════════════════════════════════════════════════════════════
+
+  backend:
+    image: blind-assistant-backend:v1
+    build:
+      context: ./project/backend
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://localhost:5173
+      - USE_MOCK_GEMINI=true
+      - USE_MOCK_SMELTER=true
+      - USE_MOCK_LOCATION=true
+      - USE_MOCK_DEPTH=false
+      - DEPTH_MODEL_DEVICE=cpu
+      - DEPTH_INFERENCE_INTERVAL=0.5
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - ./project/backend/video_input:/app/video_input
+      - model-cache:/app/models
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - frontend-network
+      - backend-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════
+  # EDGE LAYER - Reverse Proxy & SSL Termination (FUTURE)
+  # ═══════════════════════════════════════════════════════════════
+  # COMMENTED OUT: Nginx proxy not needed yet for development
+  # Will be enabled when deploying to production
+  #
+  # nginx:
+  #   image: nginx:alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./nginx/ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - streaming-gateway
+  #     - backend
+  #   networks:
+  #     - frontend-network
+  #     - backend-network
+  #   restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # GATEWAY LAYER - WebRTC & Frame Distribution
+  # ═══════════════════════════════════════════════════════════════
+  # COMMENTED OUT: Service skeleton exists but no main.py implementation yet
+  # Uncomment after: Creating main.py with FastAPI app and /health endpoint
+  #
+  # streaming-gateway:
+  #   build:
+  #     context: ./services/streaming-gateway
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379
+  #     - LOG_LEVEL=INFO
+  #     - FRAME_DOWNSAMPLE_WIDTH=480
+  #     - FRAME_DOWNSAMPLE_HEIGHT=360
+  #     - MAX_FRAME_QUEUE_SIZE=100
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - backend-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+
+  # ═══════════════════════════════════════════════════════════════
+  # AI INFERENCE LAYER - Depth Workers
+  # ═══════════════════════════════════════════════════════════════
+
+  depth-worker-a:
+    image: depth-worker:v1
+    build:
+      context: ./services/depth-worker-a
+      dockerfile: Dockerfile
+    # GPU configuration - DISABLED for macOS/local development
+    # Uncomment for Linux with NVIDIA GPU:
+    # deploy:
+    #   replicas: 2
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - WORKER_ID=depth-worker-a-1
+      - MODEL_DEVICE=cpu  # Use CPU for macOS (change to 'cuda' on Linux with GPU)
+      - BATCH_SIZE=1
+      - INDOOR_MODEL_ID=depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf
+      - OUTDOOR_MODEL_ID=depth-anything/Depth-Anything-V2-Metric-Outdoor-Small-hf
+      - HUGGINGFACE_CACHE=/models/cache
+      - LOG_LEVEL=INFO
+    volumes:
+      - model-cache:/models/cache
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - inference-network
+      - backend-network
+    restart: unless-stopped
+    ports:
+      - "8000:8000"  # Prometheus metrics
+
+  # COMMENTED OUT: Service doesn't exist yet (depth-worker-b)
+  # depth-worker-b:
+  #   image: depth-worker:v1
+  #   build:
+  #     context: ./services/depth-worker-b
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379
+  #     - OBSTACLE_THRESHOLD_INDOOR=1.5
+  #     - OBSTACLE_THRESHOLD_OUTDOOR=2.0
+  #     - ALERT_THROTTLE_SECONDS=2.0
+  #   depends_on:
+  #     - depth-worker-a
+  #     - redis
+  #   networks:
+  #     - inference-network
+  #   restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # BUSINESS LOGIC LAYER
+  # ═══════════════════════════════════════════════════════════════
+  # COMMENTED OUT: Service skeleton exists but no main.py implementation yet
+  # Uncomment after: Creating main.py with FastAPI app and business logic
+  #
+  # orchestrator:
+  #   build:
+  #     context: ./services/orchestrator
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379
+  #     - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/blind_assistant
+  #     - GEMINI_SERVICE_URL=http://gemini-service:8003
+  #     - MAP_SERVICE_URL=http://map-service:8004
+  #     - TTS_LANGUAGE=pl-PL
+  #     - ALERT_HISTORY_LIMIT=100
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - backend-network
+  #     - inference-network
+  #     - data-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+
+  # COMMENTED OUT: Service doesn't exist yet (gemini-service)
+  # gemini-service:
+  #   build:
+  #     context: ./services/gemini-service
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - GEMINI_API_KEY=${GEMINI_API_KEY}
+  #     - REDIS_URL=redis://redis:6379
+  #     - CACHE_TTL_SECONDS=3600
+  #     - MODEL_NAME=gemini-1.5-pro
+  #     - REQUEST_TIMEOUT=30
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - backend-network
+  #   restart: unless-stopped
+
+  # COMMENTED OUT: Service doesn't exist yet (map-service)
+  # map-service:
+  #   build:
+  #     context: ./services/map-service
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379
+  #     - NOMINATIM_URL=https://nominatim.openstreetmap.org
+  #     - CACHE_TTL_SECONDS=3600
+  #     - USER_AGENT=BlindAssistant/1.0
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - backend-network
+  #   restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # DATA LAYER
+  # ═══════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - backend-network
+      - inference-network
+      - data-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=blind_assistant
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - data-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - data-network
+    restart: unless-stopped
+
+# ═══════════════════════════════════════════════════════════════
+# NETWORKS - Segmented for Security & Scalability
+# ═══════════════════════════════════════════════════════════════
+networks:
+  frontend-network:
+    driver: bridge
+    name: blind-assistant-frontend
+
+  backend-network:
+    driver: bridge
+    name: blind-assistant-backend
+    internal: false  # Allows external API calls (Gemini, OSM)
+
+  inference-network:
+    driver: bridge
+    name: blind-assistant-inference
+    internal: true  # Isolated for AI workers
+
+  data-network:
+    driver: bridge
+    name: blind-assistant-data
+    internal: true  # Database layer isolation
+
+# ═══════════════════════════════════════════════════════════════
+# VOLUMES
+# ═══════════════════════════════════════════════════════════════
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  minio-data:
+    driver: local
+  model-cache:
+    driver: local
+
